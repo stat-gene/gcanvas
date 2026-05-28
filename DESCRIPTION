@@ -1,0 +1,51 @@
+Package: gcanvas
+Type: Package
+Title: Genomic Visualization and Analysis Toolkit
+Version: 0.1.0
+Authors@R: person(
+    given = "Beomsu", family = "Kim",
+    email = "bk.statg@gmail.com",
+    role = c("aut", "cre"),
+    comment = c(ORCID = "0000-0001-7410-4273"))
+Description: A toolkit for visualizing and analyzing genomic association data,
+    including Manhattan, Q-Q, regional, Miami, circos, and heterozygosity-
+    missingness plots; principal component analysis with reference projection
+    and ancestry estimation; LD computation, clumping, and proxy lookup;
+    GTF-driven gene/exon tracks; liftover; and assorted helpers for working
+    with GWAS summary statistics.
+License: MIT + file LICENSE
+URL: https://github.com/stat-gene/gcanvas
+BugReports: https://github.com/stat-gene/gcanvas/issues
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Depends: R (>= 4.1.0)
+Imports:
+    data.table,
+    ggplot2,
+    ggrepel,
+    scales,
+    grDevices,
+    graphics,
+    grid,
+    stats,
+    utils,
+    tools,
+    digest,
+    rlang,
+    RColorBrewer
+Suggests:
+    bigsnpr,
+    bigstatsr,
+    Matrix,
+    Rsamtools,
+    RhpcBLASctl,
+    ggnewscale,
+    rcartocolor,
+    viridis,
+    viridisLite,
+    parallel,
+    knitr,
+    rmarkdown
+RoxygenNote: 7.3.3
+Roxygen: list(markdown = TRUE)

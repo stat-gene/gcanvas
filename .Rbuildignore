@@ -1,0 +1,14 @@
+^gcanvas_functions\.R$
+^gcanvas\.tracks\.b37\.rds$
+^gcanvas\.tracks\.b38\.rds$
+^PCA_ReferenceQC_Ancestry_Design\.md$
+^PCA_ancestry_estimation\.md$
+^PCA_ancestry_estimation_KOR\.md$
+^data-raw$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^\.gitignore$
+^\.claude$
+^r-script-humming-coral\.md$
+^LICENSE\.md$

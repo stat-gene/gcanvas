@@ -1,0 +1,25 @@
+# History / scratch
+.Rhistory
+.RData
+.Ruserdata
+.Rapp.history
+
+# RStudio
+.Rproj.user/
+*.Rproj
+
+# macOS
+.DS_Store
+
+# Build artifacts
+*.tar.gz
+/gcanvas.Rcheck/
+/docs/
+
+# Claude / session scratch (kept out of releases)
+/.claude/
+/r-script-humming-coral.md
+
+# reference resource - dev
+reference/
+
