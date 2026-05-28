@@ -25,8 +25,23 @@ remotes::install_github("stat-gene/gcanvas")
 remotes::install_github("stat-gene/gcanvas@v0.1.0")
 ```
 
-Heavy dependencies (`bigsnpr`, `Rsamtools`, `rcartocolor`, ...) are listed as
-`Suggests`; install them when you need the functions that touch them.
+Heavy R dependencies (`bigsnpr`, `Rsamtools`, `rcartocolor`, ...) are listed
+as `Suggests`; install them when you need the functions that touch them.
+
+### External binaries
+
+Some functions shell out to standard genomics tools. Install whichever you
+need for your workflow:
+
+| Tool | Used by | macOS | Linux | Windows |
+|---|---|---|---|---|
+| `plink2` | `pca`, `pca.projection`, `plink.extract`, `hetmiss` | `brew install plink2` | apt / conda / native binary | Native binary on `PATH` |
+| `tabix` (htslib) | `gtf2rds`, `regional` (GTF mode), `geneinfo` (GTF mode) | `brew install htslib` | `apt install tabix` / conda | **WSL required** |
+| UCSC `liftOver` | `liftover` | UCSC binary | UCSC binary | **WSL required** |
+
+The package itself loads on every OS (CI tests macOS / Linux / Windows). On
+Windows native, the LD / PCA / Manhattan / Q-Q / regional (LD-only) / circos
+paths work; GTF and liftover paths need WSL or a Linux/macOS shell.
 
 ## What's inside
 
