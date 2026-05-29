@@ -5,7 +5,9 @@
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
-Genomic visualization and analysis toolkit for GWAS workflows: Manhattan / Q-Q
+A visualization and analysis toolkit for GWAS workflows:
+
+Manhattan / Q-Q
 / regional / Miami / circos / heterozygosity-missingness plots, PCA with
 reference projection and ancestry estimation, LD computation / clumping /
 proxy lookup, GTF-driven gene tracks, liftover, and a set of helpers for
