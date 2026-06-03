@@ -121,28 +121,90 @@ paths work; GTF and liftover paths need WSL or a Linux/macOS shell.
 | `mat2dt()` | Matrix → long-form pair table |
 | `gtf2rds()` | Convert bgzipped + tabix-indexed GTF into a `gcanvas` annotation cache |
 
+### Toy data generators
+| Function | Purpose |
+|---|---|
+| `toy.gwas()` | Synthetic GWAS summary stats + matching PLINK1 bfile (single- or multi-ancestry); used in every example below |
+| `toy.eqtl()` | Synthetic eQTL summary stats; can piggyback on a `toy.gwas()` result to share variants and bfile |
+
 Built-in datasets: `tracks.b37`, `tracks.b38` (lazy-loaded annotation tracks).
 
 ## Minimal example
 
+All examples below are self-contained — `toy.gwas()` writes a small PLINK1
+bfile on disk so the LD / PCA / het-miss steps work without external data.
+
 ```r
 library(gcanvas)
 
-# Manhattan + Q-Q on a summary-stat data.table with SNP/CHR/POS/P columns
-manhattan(sumstats)
-qq(sumstats)
+# ---------------------------------------------------------------------------
+# 1. Generate a toy GWAS (summary stats + matching PLINK1 bfile "toy")
+# ---------------------------------------------------------------------------
+sumstats <- toy.gwas(
+  n.sample = 5000, n.snp = 10000, n.causal = 3,
+  seed = 23L, bfile = "toy"
+)
+leads <- get.lead(sumstats)$leadSNP
 
-# Regional locus zoom around a lead SNP
-regional(sumstats, snp = "rs12345", flank = 5e5)
+# ---------------------------------------------------------------------------
+# 2. Genome-wide diagnostic plots
+# ---------------------------------------------------------------------------
+manhattan(sumstats, lead = leads, lead.label.col = "SNP")
+qq(sumstats, lambda.gc = TRUE)
 
-# PCA + ancestry estimation workflow
-ref  <- pca(bfile = "ref")
-proj <- pca.projection(ref, target = "target")
-qcd  <- pca.refqc(ref, label.data = ref_labels, label.col = "ancestry")
-anc  <- pca.ancestry(proj, label.data = qcd$label.data, label.col = "ancestry")
+# ---------------------------------------------------------------------------
+# 3. Regional locus zoom (LD coloring from the toy bfile)
+# ---------------------------------------------------------------------------
+regional(sumstats, snp = leads[1], ld.bfile = "toy", flank = 2.5e5)
+
+# ---------------------------------------------------------------------------
+# 4. LD utilities
+# ---------------------------------------------------------------------------
+ld_pairs <- calcld(snp = leads[1], flank = "10kb", ld.bfile = "toy")
+clumps   <- ldclump(sumstats, ld.bfile = "toy", rsq = 0.2)
+proxies  <- ldproxy(leads[1], ld.bfile = "toy", rsq = 0.8)
+is.novel(leads, reported = leads[1], distance = "1Mb")
+
+# ---------------------------------------------------------------------------
+# 5. Two-study comparison: Miami plot
+# ---------------------------------------------------------------------------
+sumstats2 <- toy.gwas(
+  n.sample = 5000, n.snp = 10000, n.causal = 2,
+  seed = 42L, bfile = "toy2"
+)
+m1 <- manhattan(sumstats,  lead = leads,        lead.label.col = "SNP")
+m2 <- manhattan(sumstats2, lead.label.col = "SNP")
+miami(m1, m2)
+
+# ---------------------------------------------------------------------------
+# 6. eQTL view of the same locus (toy.eqtl reuses the GWAS scaffold)
+# ---------------------------------------------------------------------------
+eqtl <- toy.eqtl(base = sumstats, n.sample = 500, seed = 23L)
+regional(
+  data = eqtl[eqtl$gene_is_focal],
+  snp  = leads[1], ld.bfile = "toy", flank = 2.5e5
+)
+
+# ---------------------------------------------------------------------------
+# 7. Sample-level QC and PCA on the toy bfile
+# ---------------------------------------------------------------------------
+hetmiss(bfile = "toy")$plot
+pc <- pca(bfile = "toy")
+pca.plot(pc, pc.use = 1:4)$plot
+
+# ---------------------------------------------------------------------------
+# 8. Pretty p-value labels for ggtext / ggplot annotations
+# ---------------------------------------------------------------------------
+format_pvalue(c(0.5, 5e-8, "1.2e-400"))  # HTML for geom_richtext()
+format_pvalue(5e-8, html = FALSE)        # "5 x 10^-8" plain text
 ```
 
-Per-function help is available via `?manhattan`, `?regional`, etc.
+Per-function help: `?manhattan`, `?regional`, `?pca`, `?toy.gwas`, ...
+
+For the multi-ancestry / PCA-projection / ancestry-estimation workflow
+(`pca.refqc()` + `pca.ancestry()`), see `?pca.refqc` — that pipeline assumes
+a merged reference/target PLINK fileset and is briefly sketched in the
+package vignettes (forthcoming).
 
 ## License
 

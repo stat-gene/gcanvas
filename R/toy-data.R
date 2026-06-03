@@ -297,7 +297,46 @@
   out[seq_len(n), .(CHR, POS)]
 }
 
-# ----- Toy: toy.gwas -----
+#' Simulate a toy GWAS summary-statistics table
+#'
+#' Generates a synthetic GWAS for quick examples and tests. Produces a
+#' `data.table` of summary stats (`SNP`, `CHR`, `POS`, `A1`, `A2`, `EAF`,
+#' `BETA`, `SE`, `Z`, `P`, `N`, `is_lead`, ...) and -- when `bfile` is set --
+#' a matching PLINK1 bfile suitable for downstream LD / PCA workflows.
+#'
+#' Supports single-ancestry (default, returns a `data.table`) and multi-
+#' ancestry mode (`n.ancestry > 1`, returns a named list of `data.table`s
+#' plus a merged PLINK fileset).
+#'
+#' @param n.sample Sample size used to scale standard errors.
+#' @param n.ancestry Number of ancestries to simulate. `>1` returns a list.
+#' @param n.snp Approximate number of variants.
+#' @param n.causal Number of causal loci.
+#' @param iid.prefix Prefix for synthetic sample IDs.
+#' @param build Genome build (`37` or `38`).
+#' @param chr Chromosomes to populate.
+#' @param var.list Optional vector of SNP IDs to use as the variant scaffold.
+#' @param causal.window,causal.nsnp,causal.min.sig Causal-locus geometry.
+#' @param p.threshold,p.floor P-value threshold for "significant" tagging and
+#'   the floor used when truncating extreme p-values.
+#' @param eaf.range Effect-allele frequency draw range.
+#' @param h2 Per-locus heritability.
+#' @param causal.mix Mixing weights for effect-direction patterns at causal loci.
+#' @param ld.decay.bp Approximate LD decay distance in bp.
+#' @param bfile Logical or path prefix. `TRUE` (default) writes a default
+#'   PLINK1 bfile next to the working directory; a character path writes to
+#'   that prefix; `FALSE` skips bfile generation.
+#' @param overwrite Logical. Overwrite existing bfile / output.
+#' @param show.progress Logical. Show a progress bar.
+#' @param seed Integer seed for reproducibility.
+#'
+#' @return A `data.table` of summary stats (single ancestry) or a named
+#'   list of such tables (multi-ancestry). Carries `attr(., "gcanvas_meta")`
+#'   with run parameters.
+#'
+#' @seealso [toy.eqtl()] for matching eQTL-style data,
+#'   [get.lead()] to extract lead variants from the result.
+#' @export
 toy.gwas <- function(n.sample = 10000L,
                      n.ancestry = 1L,
                      n.snp = 10000L,
@@ -1434,7 +1473,39 @@ toy.gwas <- function(n.sample = 10000L,
   var_dt
 }
 
-# ----- Toy: toy.eqtl -----
+#' Simulate a toy eQTL summary-statistics table
+#'
+#' Generates a synthetic eQTL dataset compatible with the [regional()] /
+#' [manhattan()] / [calcld()] surface. Adds gene-level columns
+#' (`gene_id`, `gene_name`, `gene_tss`, `gene_locus_id`, `gene_is_focal`,
+#' `is_lead_gene`, ...) on top of the standard GWAS layout.
+#'
+#' Can either build a new variant scaffold from scratch or piggyback on an
+#' existing [toy.gwas()] table via `base = <toy.gwas result>` so the eQTL
+#' and GWAS share variants and bfile.
+#'
+#' @param base Optional output of [toy.gwas()] to reuse the variant scaffold.
+#' @param n.sample Sample size used to scale standard errors.
+#' @param n.snp,n.causal,causal.window,causal.nsnp,causal.min.sig Causal-
+#'   locus geometry.
+#' @param iid.prefix,build,chr,p.threshold,p.floor,eaf.range,h2,causal.mix,ld.decay.bp
+#'   Same meaning as in [toy.gwas()].
+#' @param gene.per.locus Number of genes drawn per causal locus.
+#' @param gene.prefix Prefix used to synthesize Ensembl-style gene ids.
+#' @param gtf Optional path to a bgzipped + tabix-indexed GTF -- if supplied,
+#'   gene names / TSS are pulled from real annotation instead of being made up.
+#' @param gtf.rds Optional `gtf2rds()` cache (alternative to `gtf`).
+#' @param cis.window,cis.decay.bp,focal.cis.scale,nonfocal.cis.scale,focal.causal.boost,nonfocal.causal.boost,trans.noise.ratio
+#'   Cis-window geometry and effect-size mixing for focal vs. non-focal genes.
+#' @param bfile Logical / path. See [toy.gwas()] for behavior.
+#' @param overwrite,show.progress,seed Same meaning as in [toy.gwas()].
+#' @param silent Logical. Suppress progress notes.
+#'
+#' @return A `data.table` of eQTL summary statistics with one row per
+#'   (gene, variant) pair. Carries `attr(., "gcanvas_meta")` with run params.
+#'
+#' @seealso [toy.gwas()] for the matching GWAS-style generator.
+#' @export
 toy.eqtl <- function(base = NULL,
                      n.sample = 500L,
                      n.snp = 10000L,
