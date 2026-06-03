@@ -216,6 +216,18 @@ get.lead <- function(data,
   unique(out)
 }
 
+#' log10 that accepts character p-values in scientific notation
+#'
+#' Like [base::log10()], but accepts character input. Useful for GWAS summary
+#' stats where p-values smaller than the IEEE-754 minimum (`~5e-324`) are
+#' stored as text (e.g. `"3.2e-400"`) and a naive `log10(as.numeric(x))`
+#' would underflow to `-Inf`. Entries containing `"e-"` are parsed manually
+#' from `<mantissa>e-<exponent>` to preserve precision.
+#'
+#' @param x Numeric or character vector of (positive) p-values.
+#' @return Numeric vector of `log10(x)`. Tiny strings are decoded without
+#'   underflowing.
+#' @export
 log10c <- function(x) {
   name.ori <- names(x)
   x <- toupper(as.character(x)); names(x) <- seq_along(x)

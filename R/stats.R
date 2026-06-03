@@ -31,22 +31,78 @@ zabs <- function(beta, se = NULL, varbeta = NULL) {
   out
 }
 
+#' `10^x` as a scientific-notation character string
+#'
+#' Inverse companion to [log10c()]: given a (possibly very negative) `log10`
+#' value, returns its scientific-notation character form without underflow.
+#' For example, `pow10c(-12012.3)` returns `"5.012e-12013"` even though the
+#' actual numeric value would underflow to `0` in IEEE-754 doubles.
+#'
+#' @param x Numeric vector of `log10` values.
+#' @param digits Integer mantissa digits to keep (default `8`).
+#'
+#' @return Character vector the same length as `x`. `NA_character_` for
+#'   non-finite entries. Round-trips with [log10c()]:
+#'   `log10c(pow10c(x)) ≈ x` and `pow10c(log10c(s)) ≈ s` (up to mantissa rounding).
+#'
+#' @seealso [log10c()] for the reverse direction.
+#' @export
+pow10c <- function(x, digits = 8L) {
+  x <- as_num(x)
+  out <- rep(NA_character_, length(x))
+  ok <- is.finite(x) & !is.na(x)
+  if (!any(ok)) return(out)
+
+  d <- as_int(digits)[1]
+  if (!is.finite(d) || is.na(d) || d < 1L) d <- 8L
+
+  expo <- floor(x[ok])
+  mant <- 10^(x[ok] - expo)
+
+  # Carry mantissa into next decade if rounding pushes it over 10.
+  mant_rounded <- round(mant, d)
+  carry <- mant_rounded >= 10
+  if (any(carry)) {
+    mant[carry] <- mant[carry] / 10
+    expo[carry] <- expo[carry] + 1L
+  }
+
+  mtxt <- formatC(mant, format = "f", digits = d)
+  mtxt <- sub("\\.?0+$", "", mtxt)
+  out[ok] <- paste0(mtxt, "e", ifelse(expo >= 0, "+", ""), as_int(expo))
+  out
+}
+
 #' Two-tailed (or one-tailed) p-value from z or (beta, SE)
 #'
-#' Computes p-values on the log scale internally and switches to a string
-#' representation in scientific notation for entries that would underflow to
-#' zero under `exp()`.
+#' Computes p-values on the log scale internally. For mid-range p-values the
+#' return is numeric; for entries below `tiny.threshold` — where `exp(logp)`
+#' would underflow to zero — the return is automatically switched to a
+#' character scientific-notation vector via [pow10c()] so precision is
+#' preserved (e.g. `"1.23e-500"`).
+#'
+#' This inherits the precision-without-underflow philosophy of [log10c()] /
+#' [pow10c()]: the function never silently rounds a tiny p to `0`.
 #'
 #' @param z Numeric vector of z-scores. If supplied, `beta`/`se`/`varbeta` are ignored.
 #' @param beta,se,varbeta Alternative inputs passed to [zabs()] when `z` is `NULL`.
 #' @param two.tailed Logical. Two-tailed p-value if `TRUE` (default).
-#' @param log.p Logical. Return natural-log p-values if `TRUE`.
-#' @param tiny.threshold Numeric. P-values below this are emitted as character
-#'   strings (preserving precision instead of underflowing to 0).
-#' @param tiny.as.character Logical. Disable the character fallback if `FALSE`.
-#' @param digits Integer. Mantissa digits used in the character representation.
+#' @param log.p Logical. Return natural-log p-values if `TRUE` (matches
+#'   `stats::pnorm(..., log.p = TRUE)` convention).
+#' @param tiny.threshold Numeric `(0, 1)`. P-values below this are emitted
+#'   as character strings (default `1e-317`, the IEEE-754 normal-range edge).
+#' @param tiny.as.character Logical. If `FALSE`, force a numeric return even
+#'   when tiny entries exist (those underflow to `0`).
+#' @param digits Integer. Mantissa digits used in the character
+#'   representation (default `8`).
 #'
-#' @return Numeric (or character) vector of p-values, same length as the input.
+#' @return Numeric vector when no entry falls below `tiny.threshold` or
+#'   `tiny.as.character = FALSE`. Otherwise a character vector with
+#'   scientific notation throughout (mid-range entries are also rendered
+#'   as character so the result is type-consistent).
+#'
+#' @seealso [pow10c()] which underlies the character formatting, and
+#'   [format_pvalue()] for HTML / Markdown labels.
 #' @export
 pvalue <- function(z = NULL,
                    beta = NULL,
@@ -56,28 +112,7 @@ pvalue <- function(z = NULL,
                    log.p = FALSE,
                    tiny.threshold = 1e-317,
                    tiny.as.character = TRUE,
-                   digits = 6L) {
-  .pvalue_logp_to_sci <- function(lp, digits = 6L) {
-    lp <- as_num(lp)
-    out <- rep(NA_character_, length(lp))
-    ok <- is.finite(lp) & !is.na(lp)
-    if (!any(ok)) return(out)
-    log10v <- lp[ok] / log(10)
-    expo <- floor(log10v)
-    mant <- exp(lp[ok] - expo * log(10))
-    shift <- mant >= 10
-    if (any(shift)) {
-      mant[shift] <- mant[shift] / 10
-      expo[shift] <- expo[shift] + 1
-    }
-    d <- as_int(digits)[1]
-    if (!is.finite(d) || is.na(d) || d < 1L) d <- 6L
-    mtxt <- formatC(mant, format = "f", digits = d)
-    mtxt <- sub("\\.?0+$", "", mtxt)
-    out[ok] <- paste0(mtxt, "e", ifelse(expo >= 0, "+", ""), as_int(expo))
-    out
-  }
-
+                   digits = 8L) {
   if (!is.null(z)) {
     absz0 <- abs(as_num(z))
   } else {
@@ -106,10 +141,118 @@ pvalue <- function(z = NULL,
     return(p_num)
   }
 
-  out <- rep(NA_character_, length(logp))
-  ok <- is.finite(logp) & !is.na(logp)
-  out[ok] <- format(signif(p_num[ok], 16), scientific = TRUE, trim = TRUE)
-  out[tiny] <- .pvalue_logp_to_sci(logp[tiny], digits = digits)
+  # Convert the whole vector to character via pow10c so output is type-stable.
+  out <- pow10c(logp / log(10), digits = digits)
+  out
+}
+
+#' Format p-values for `ggtext::geom_richtext()` / Markdown labels
+#'
+#' Converts numeric, character, or `log10(p)` inputs into a typeset
+#' scientific-notation string like `"3.2 &times; 10<sup>-8</sup>"` (HTML,
+#' default — suitable for [ggtext::geom_richtext()] /
+#' [ggtext::element_markdown()]) or `"3.2 x 10^-8"` (plain text).
+#'
+#' Tiny p-values that would underflow under `as.numeric()` are routed through
+#' [log10c()] when the input is character, or supplied directly via
+#' `log10p = TRUE`. Either way precision is preserved.
+#'
+#' @param x P-values (numeric or character) or, when `log10p = TRUE`,
+#'   base-10-log p-values (i.e. `log10(p)`, **not** natural log).
+#' @param log10p Logical. If `TRUE`, `x` is treated as `log10(p)`. Default `FALSE`.
+#' @param digits Mantissa digits to keep (default `2`).
+#' @param plain.cutoff Numeric `(0, 1]` or `NULL`. P-values at or above this
+#'   value are rendered as plain decimals (e.g. `"0.05"`) instead of
+#'   scientific notation. `NULL` (default) means "always use scientific".
+#' @param html Logical. If `TRUE` (default), emit HTML-rich output using
+#'   `<sup>` and the `times` glyph -- ready for
+#'   [ggtext::geom_richtext()]. If `FALSE`, emit a plain ASCII form,
+#'   `"<mantissa> x 10^<exp>"` (e.g. `"3.20 x 10^-8"`).
+#' @param times Character. The multiplication glyph in HTML mode. Defaults
+#'   to the HTML entity `"&times;"`. Ignored when `html = FALSE`.
+#'
+#' @return Character vector of the same length as `x`.
+#'
+#' @examples
+#' \dontrun{
+#'   library(ggplot2); library(ggtext)
+#'   ggplot(df, aes(x, y, label = format_pvalue(P))) +
+#'     geom_richtext()
+#'   # log10(p) input (e.g. from -negLog10P in a Manhattan plot)
+#'   format_pvalue(-7.3, log10p = TRUE)
+#'   # plain-text fallback (e.g. for base graphics or copy-paste)
+#'   format_pvalue(5e-8, html = FALSE)
+#' }
+#' @export
+format_pvalue <- function(x,
+                          log10p = FALSE,
+                          digits = 2L,
+                          plain.cutoff = NULL,
+                          html = TRUE,
+                          times = "&times;") {
+  if (is.null(x) || length(x) == 0L) return(character())
+
+  if (isTRUE(log10p)) {
+    log10v_all <- as_num(x)
+  } else {
+    if (is.character(x)) {
+      log10v_all <- suppressWarnings(log10c(x))
+    } else {
+      log10v_all <- suppressWarnings(log10(as_num(x)))
+    }
+  }
+
+  d <- as_int(digits)[1]
+  if (!is.finite(d) || is.na(d) || d < 1L) d <- 2L
+
+  pc_use <- NULL
+  if (!is.null(plain.cutoff) && length(plain.cutoff)) {
+    pc_val <- suppressWarnings(as.numeric(plain.cutoff)[1])
+    if (is.finite(pc_val) && !is.na(pc_val) && pc_val > 0 && pc_val <= 1) {
+      pc_use <- pc_val
+    }
+  }
+
+  html_use <- isTRUE(html)
+  times <- as.character(times)[1]
+  if (is.na(times) || !nzchar(times)) times <- "&times;"
+
+  out <- rep(NA_character_, length(log10v_all))
+  ok <- is.finite(log10v_all) & !is.na(log10v_all)
+  if (!any(ok)) return(out)
+
+  log10v <- log10v_all[ok]
+  expo <- floor(log10v)
+  mant <- 10^(log10v - expo)
+
+  mant_rounded <- round(mant, d)
+  carry <- mant_rounded >= 10
+  if (any(carry)) {
+    mant[carry] <- mant[carry] / 10
+    expo[carry] <- expo[carry] + 1L
+  }
+
+  mtxt <- formatC(mant, format = "f", digits = d)
+  mtxt <- sub("\\.?0+$", "", mtxt)
+
+  res <- if (html_use) {
+    sprintf("%s %s 10<sup>%d</sup>", mtxt, times, as_int(expo))
+  } else {
+    sprintf("%s x 10^%d", mtxt, as_int(expo))
+  }
+
+  if (!is.null(pc_use)) {
+    p_val <- mant * 10^expo
+    plain_idx <- p_val >= pc_use
+    if (any(plain_idx)) {
+      plain_txt <- formatC(p_val[plain_idx], format = "fg", digits = d + 1L, flag = "#")
+      plain_txt <- sub("\\.?0+$", "", plain_txt)
+      plain_txt <- sub("^[[:space:]]+", "", plain_txt)
+      res[plain_idx] <- plain_txt
+    }
+  }
+
+  out[ok] <- res
   out
 }
 

@@ -108,8 +108,11 @@ paths work; GTF and liftover paths need WSL or a Linux/macOS shell.
 | `sort.chrom()` | Sort vectors / tables in natural chromosome order |
 | `rank.chrom()` | Integer rank for chromosome ordering |
 | `normalize.chrom()` | Canonicalize chromosome names (strip `chr`, remap `23 → X` ...) |
-| `pvalue()` | Two-/one-tailed p-values from z (or beta/se), with tiny-p string fallback |
-| `zabs()` | `|beta / se|` (or `|beta / sqrt(varbeta)|`) |
+| `pvalue()` | Two-/one-tailed p-values from z (or beta/se); switches to scientific-notation character for values below `tiny.threshold` so tiny p never underflows |
+| `format_pvalue()` | Format p-values (numeric / char / `log10(p)`) as `geom_richtext`/Markdown HTML (default) or plain `"3.20 x 10^-8"` (`html = FALSE`) |
+| `log10c()` | `log10()` that accepts character p-values in scientific notation (handles values smaller than `5e-324`) |
+| `pow10c()` | Inverse of `log10c()`: turns `log10(p)` into character scientific notation, never underflows (`pow10c(-12012) -> "1e-12012"`) |
+| `zabs()` | `\|beta / se\|` (or `\|beta / sqrt(varbeta)\|`) |
 | `quantvec()` | Quantile bucket labels (factor of `"1st", "2nd", ...`) |
 | `credibleset()` | Credible-set labels from posterior inclusion probabilities |
 | `invnorm()` | Rank-based inverse normal transform |

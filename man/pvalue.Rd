@@ -13,7 +13,7 @@ pvalue(
   log.p = FALSE,
   tiny.threshold = 1.00000023069254e-317,
   tiny.as.character = TRUE,
-  digits = 6L
+  digits = 8L
 )
 }
 \arguments{
@@ -23,20 +23,36 @@ pvalue(
 
 \item{two.tailed}{Logical. Two-tailed p-value if \code{TRUE} (default).}
 
-\item{log.p}{Logical. Return natural-log p-values if \code{TRUE}.}
+\item{log.p}{Logical. Return natural-log p-values if \code{TRUE} (matches
+\code{stats::pnorm(..., log.p = TRUE)} convention).}
 
-\item{tiny.threshold}{Numeric. P-values below this are emitted as character
-strings (preserving precision instead of underflowing to 0).}
+\item{tiny.threshold}{Numeric \verb{(0, 1)}. P-values below this are emitted
+as character strings (default \code{1e-317}, the IEEE-754 normal-range edge).}
 
-\item{tiny.as.character}{Logical. Disable the character fallback if \code{FALSE}.}
+\item{tiny.as.character}{Logical. If \code{FALSE}, force a numeric return even
+when tiny entries exist (those underflow to \code{0}).}
 
-\item{digits}{Integer. Mantissa digits used in the character representation.}
+\item{digits}{Integer. Mantissa digits used in the character
+representation (default \code{8}).}
 }
 \value{
-Numeric (or character) vector of p-values, same length as the input.
+Numeric vector when no entry falls below \code{tiny.threshold} or
+\code{tiny.as.character = FALSE}. Otherwise a character vector with
+scientific notation throughout (mid-range entries are also rendered
+as character so the result is type-consistent).
 }
 \description{
-Computes p-values on the log scale internally and switches to a string
-representation in scientific notation for entries that would underflow to
-zero under \code{exp()}.
+Computes p-values on the log scale internally. For mid-range p-values the
+return is numeric; for entries below \code{tiny.threshold} — where \code{exp(logp)}
+would underflow to zero — the return is automatically switched to a
+character scientific-notation vector via \code{\link[=pow10c]{pow10c()}} so precision is
+preserved (e.g. \code{"1.23e-500"}).
+}
+\details{
+This inherits the precision-without-underflow philosophy of \code{\link[=log10c]{log10c()}} /
+\code{\link[=pow10c]{pow10c()}}: the function never silently rounds a tiny p to \code{0}.
+}
+\seealso{
+\code{\link[=pow10c]{pow10c()}} which underlies the character formatting, and
+\code{\link[=format_pvalue]{format_pvalue()}} for HTML / Markdown labels.
 }
