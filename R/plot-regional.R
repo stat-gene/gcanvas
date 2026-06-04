@@ -69,7 +69,7 @@
       ggplot2::geom_point(data = d1, ggplot2::aes(x = xvalue, y = yval, fill = ld1_plot, shape = point_shape), color = "grey20", size = 3, alpha = alpha, show.legend = FALSE) +
       ggplot2::geom_point(data = legend_dummy, ggplot2::aes(x = x, y = y, fill = ld_legend), inherit.aes = FALSE, shape = 21, size = 0, alpha = 0, stroke = 0, show.legend = TRUE) +
       ggplot2::scale_fill_stepsn(colors = pal1, limits = c(0, 1), breaks = ld_breaks, show.limits = TRUE, na.value = "grey35",
-        guide = ggplot2::guide_coloursteps(title = bquote(r[1]^2 ~ "(" * .(lead_snp) * ")"),
+        guide = ggplot2::guide_coloursteps(title = if (is.null(lead_snp) || is.na(lead_snp)) bquote(r[1]^2) else bquote(r[1]^2 ~ "(" * .(lead_snp) * ")"),
           title.theme = ggplot2::element_text(face = "bold", size = 14),
           label.theme = ggplot2::element_text(size = 11),
           title.position = "top",
@@ -86,7 +86,7 @@
       ggplot2::geom_point(data = d2, ggplot2::aes(x = xvalue, y = yval, fill = ld2_plot, shape = point_shape), color = "grey20", size = 3, alpha = alpha, show.legend = FALSE) +
       ggplot2::geom_point(data = legend_dummy, ggplot2::aes(x = x, y = y, fill = ld_legend), inherit.aes = FALSE, shape = 21, size = 0, alpha = 0, stroke = 0, show.legend = TRUE) +
       ggplot2::scale_fill_stepsn(colors = pal2, limits = c(0, 1), breaks = ld_breaks, show.limits = TRUE, na.value = "grey35",
-        guide = ggplot2::guide_coloursteps(title = bquote(r[2]^2 ~ "(" * .(lead_snp2) * ")"),
+        guide = ggplot2::guide_coloursteps(title = if (is.null(lead_snp2) || is.na(lead_snp2)) bquote(r[2]^2) else bquote(r[2]^2 ~ "(" * .(lead_snp2) * ")"),
           title.theme = ggplot2::element_text(face = "bold", size = 14),
           label.theme = ggplot2::element_text(size = 11),
           title.position = "top",
@@ -313,6 +313,14 @@
 #' LD r-squared to the lead variant, optional second-track overlay (e.g. eQTL),
 #' direction-of-effect glyphs, credible-set highlighting, and gene/exon tracks
 #' supplied by [regional.track()].
+#'
+#' The lead variant can be specified via `snp`, by `chrom` + `pos`, or
+#' omitted entirely. When neither a SNP nor coordinates pin a lead variant
+#' (or when the requested `snp` is not in `data`), the function falls back
+#' to a no-lead mode: it draws the region defined by `pos.range` without a
+#' highlighted lead point, lead-driven LD computation
+#' (`ld.matrix` / `ld.rds` / `ld.bfile`) is skipped with a warning, and
+#' point coloring uses precomputed `ld.col` / `ld2.col` columns if present.
 #'
 #' @param data A `data.frame`/`data.table` of summary statistics.
 #' @param snp,snp2 Lead variant id(s) — `snp2` enables the second-track overlay.
@@ -663,25 +671,80 @@ regional <- function(data,
     snp_is_auto <- is.null(snp) || (is.character(snp) && length(snp) == 1L && tolower(trimws(as.character(snp)[1])) == "auto")
     chrom_is_auto <- is.null(chrom) || (is.character(chrom) && length(chrom) == 1L && tolower(trimws(as.character(chrom)[1])) == "auto")
     pos_is_auto <- is.null(pos) || (is.character(pos) && length(pos) == 1L && tolower(trimws(as.character(pos)[1])) == "auto")
-    if (snp_is_auto) {
-      if (chrom_is_auto || pos_is_auto) stop("When snp is NULL/auto, both chrom and pos must be provided.", call. = FALSE)
+    posrange_given <- !is.null(pos.range) &&
+      !(length(pos.range) == 1L && is.character(pos.range) && tolower(trimws(as.character(pos.range)[1])) == "auto")
+
+    has_lead <- FALSE
+    .resolve_chrom_from_data <- function() {
+      uc <- unique(normalize.chrom(df0$CHR))
+      uc <- uc[!is.na(uc) & nzchar(uc)]
+      if (length(uc) != 1L) {
+        stop("No lead SNP / chrom given. Either supply `chrom`, or filter `data` to a single chromosome.", call. = FALSE)
+      }
+      uc[1]
+    }
+
+    if (!snp_is_auto) {
+      snp_query <- as.character(snp)[1]
+      ii <- which(df0$snp == snp_query)
+      if (length(ii)) {
+        if (!chrom_is_auto || !pos_is_auto) {
+          warning("snp matched in data; chrom/pos are ignored and lead coordinates are taken from the matched SNP row.", call. = FALSE)
+        }
+        snp <- snp_query
+        chrom <- normalize.chrom(df0$CHR[ii[1]])[1]
+        pos <- as.numeric(df0$POS[ii[1]])
+        has_lead <- TRUE
+      } else {
+        # SNP not found in data: try chrom+pos fallback, else fall back to no-lead pos.range mode.
+        .gcanvas_warn_msg(sprintf(
+          "Lead SNP '%s' not found in data; proceeding without highlighting a lead variant.",
+          snp_query
+        ))
+        if (!chrom_is_auto && !pos_is_auto) {
+          chrom <- normalize.chrom(chrom)[1]
+          pos <- suppressWarnings(as.numeric(pos))
+          if (!is.finite(pos)) stop("Invalid pos.", call. = FALSE)
+          snp <- NA_character_
+        } else if (posrange_given) {
+          chrom <- if (chrom_is_auto) .resolve_chrom_from_data() else normalize.chrom(chrom)[1]
+          snp <- NA_character_
+          pos <- NA_real_
+        } else {
+          stop("Lead SNP not found in data and no fallback (chrom+pos or pos.range) supplied.", call. = FALSE)
+        }
+      }
+    } else if (!chrom_is_auto && !pos_is_auto) {
       chrom <- normalize.chrom(chrom)[1]
       pos <- suppressWarnings(as.numeric(pos))
       if (!is.finite(pos)) stop("Invalid pos.", call. = FALSE)
       ii <- which(df0$CHR == chrom & df0$POS == pos)
-      if (!length(ii)) stop("Lead not found: check chrom/pos.", call. = FALSE)
-      snp <- df0$snp[ii[1]]
+      if (length(ii)) {
+        snp <- df0$snp[ii[1]]
+        has_lead <- TRUE
+      } else {
+        .gcanvas_warn_msg(sprintf(
+          "No SNP at chr%s:%s found in data; proceeding without highlighting a lead variant.",
+          as.character(chrom), format(pos, scientific = FALSE)
+        ))
+        snp <- NA_character_
+      }
     } else {
-      if (!chrom_is_auto || !pos_is_auto) warning("snp is provided; chrom/pos are ignored and lead coordinates are taken from the matched SNP row.", call. = FALSE)
-      snp <- as.character(snp)[1]
-      ii <- which(df0$snp == snp)
-      if (!length(ii)) stop("Lead SNP not found in data.", call. = FALSE)
-      chrom <- normalize.chrom(df0$CHR[ii[1]])[1]
-      pos <- as.numeric(df0$POS[ii[1]])
+      # Neither snp nor (chrom + pos) given -- require pos.range to know the window.
+      if (!posrange_given) {
+        stop(
+          "regional() needs at least one of: (1) snp; (2) chrom + pos; or (3) chrom + pos.range. None were provided.",
+          call. = FALSE
+        )
+      }
+      chrom <- if (chrom_is_auto) .resolve_chrom_from_data() else normalize.chrom(chrom)[1]
+      snp <- NA_character_
+      pos <- NA_real_
     }
+
     use_snp2 <- FALSE
     pos2 <- NA_real_
-    if (!is.null(snp2) && length(snp2) > 0L) {
+    if (has_lead && !is.null(snp2) && length(snp2) > 0L) {
       snp2_in <- as.character(snp2)[1]
       if (!is.na(snp2_in) && nzchar(snp2_in) && !(tolower(snp2_in) %in% c("false", "auto"))) {
         snp2 <- snp2_in
@@ -694,8 +757,17 @@ regional <- function(data,
           use_snp2 <- TRUE
         }
       }
+    } else if (!has_lead && !is.null(snp2) && length(snp2) > 0L) {
+      snp2_in <- as.character(snp2)[1]
+      if (!is.na(snp2_in) && nzchar(snp2_in) && !(tolower(snp2_in) %in% c("false", "auto"))) {
+        .gcanvas_warn_msg("snp2 is ignored when no primary lead SNP is resolved.")
+      }
     }
+
     if (is.null(pos.range) || (length(pos.range) == 1 && tolower(as.character(pos.range)) == "auto")) {
+      if (!has_lead) {
+        stop("pos.range is required when no lead SNP is resolved.", call. = FALSE)
+      }
       if (isTRUE(use_snp2) && is.finite(pos2)) {
         pos.range <- c(min(pos, pos2) - flank_use, max(pos, pos2) + flank_use)
       } else {
@@ -722,10 +794,12 @@ regional <- function(data,
       df0$POS <- pos_new
       df0 <- df0[!is.na(POS)]
       if (!nrow(df0)) stop("No variants left after liftover.", call. = FALSE)
-      pos <- liftover_positions(chrom, pos, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
+      if (has_lead) {
+        pos <- liftover_positions(chrom, pos, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
+      }
       if (isTRUE(use_snp2)) pos2 <- liftover_positions(chrom, pos2, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
       pos.range <- liftover_positions(chrom, pos.range, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
-      if (any(is.na(pos.range)) || is.na(pos) || (isTRUE(use_snp2) && is.na(pos2))) stop("Lead/pos.range liftover failed.", call. = FALSE)
+      if (any(is.na(pos.range)) || (has_lead && is.na(pos)) || (isTRUE(use_snp2) && is.na(pos2))) stop("Lead/pos.range liftover failed.", call. = FALSE)
       pos.range <- c(min(pos.range), max(pos.range))
     }
     df0 <- df0[CHR == chrom & POS >= pos.range[1] & POS <= pos.range[2]]
@@ -801,6 +875,7 @@ regional <- function(data,
       pos = pos,
       pos2 = pos2,
       use_snp2 = use_snp2,
+      has_lead = has_lead,
       pos.range = pos.range,
       build = build,
       build.gwas = build.gwas,
@@ -815,7 +890,7 @@ regional <- function(data,
     )
   }
 
-  compute_ld <- function(df0, chrom, pos, pos2, pos.range, snp, snp2, use_snp2, ldcolorset) {
+  compute_ld <- function(df0, chrom, pos, pos2, pos.range, snp, snp2, use_snp2, has_lead, ldcolorset) {
     ld_mode <- "none"
     ld_matrix0 <- NULL
     ld_rds0 <- NULL
@@ -833,7 +908,24 @@ regional <- function(data,
     }
     if (!is.null(ld.rds) && length(ld.rds) > 0L && !is.na(ld.rds[1]) && nzchar(as.character(ld.rds[1]))) ld_rds0 <- abs_path(as.character(ld.rds)[1])
     if (!is.null(ld.bfile) && length(ld.bfile) > 0L && !is.na(ld.bfile[1]) && nzchar(as.character(ld.bfile[1]))) ld_bfile0 <- .gcanvas_normalize_bfile_prefix(ld.bfile)
-    if (has_valid_ld_matrix) {
+
+    # Lead-required LD backends (matrix / rds / bfile) need a lead SNP to
+    # compute r2 against. If there's no lead, fall through to precomputed
+    # columns (ld.col / ld2.col) or "none".
+    if (!isTRUE(has_lead)) {
+      if (has_valid_ld_matrix || !is.null(ld_rds0) || !is.null(ld_bfile0)) {
+        .gcanvas_warn_msg("LD reference (ld.matrix/ld.rds/ld.bfile) provided but no lead SNP resolved; falling back to ld.col / ld2.col columns if present.")
+      }
+      has_valid_ld_matrix <- FALSE
+      ld_matrix0 <- NULL
+      ld_rds0 <- NULL
+      ld_bfile0 <- NULL
+      if (has_ld1_pre || (isTRUE(use_snp2) && has_ld2_pre)) {
+        ld_mode <- "precomputed"
+      } else {
+        ld_mode <- "none"
+      }
+    } else if (has_valid_ld_matrix) {
       if (!is.null(ld_rds0) || !is.null(ld_bfile0) || has_ld1_pre || (isTRUE(use_snp2) && has_ld2_pre)) {
         .gcanvas_warn_msg("ld.matrix provided; using ld.matrix and ignoring other LD sources.")
       }
@@ -976,12 +1068,13 @@ regional <- function(data,
         !is.null(biotype.keep.use) &&
         any(tolower(as.character(biotype.keep.use)) %in% "lncrna", na.rm = TRUE)
       gtf_bgz <- if (grepl("\\.bgz$", gtf, ignore.case = TRUE)) gtf else gtf_prepare_tabix(gtf, sort = "auto", chr_order = "natural")
+      lead_pos_for_tracks <- if (isTRUE(has_lead) && is.finite(pos)) pos else mean(pos.range)
       tracks <- regional.track(
         gtf_bgz = gtf_bgz,
         chrom = chrom,
         pos.range = pos.range,
         y.max = y.max0,
-        lead_pos = pos,
+        lead_pos = lead_pos_for_tracks,
         keep_biotype = biotype.keep.use,
         gene_max_levels = gene.max_row,
         gene_max_n = gene.max_n,
@@ -1022,7 +1115,7 @@ regional <- function(data,
   list2env(opt, environment())
   prep <- prepare_input()
   list2env(prep, environment())
-  ld_res <- compute_ld(df0 = df0, chrom = chrom, pos = pos, pos2 = pos2, pos.range = pos.range, snp = snp, snp2 = snp2, use_snp2 = use_snp2, ldcolorset = ldcolorset)
+  ld_res <- compute_ld(df0 = df0, chrom = chrom, pos = pos, pos2 = pos2, pos.range = pos.range, snp = snp, snp2 = snp2, use_snp2 = use_snp2, has_lead = has_lead, ldcolorset = ldcolorset)
   df0 <- ld_res$df0
   ld_meta <- ld_res$ld_meta
   ldcolorset <- ld_res$ldcolorset

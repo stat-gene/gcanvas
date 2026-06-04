@@ -159,3 +159,12 @@ LD r-squared to the lead variant, optional second-track overlay (e.g. eQTL),
 direction-of-effect glyphs, credible-set highlighting, and gene/exon tracks
 supplied by \code{\link[=regional.track]{regional.track()}}.
 }
+\details{
+The lead variant can be specified via \code{snp}, by \code{chrom} + \code{pos}, or
+omitted entirely. When neither a SNP nor coordinates pin a lead variant
+(or when the requested \code{snp} is not in \code{data}), the function falls back
+to a no-lead mode: it draws the region defined by \code{pos.range} without a
+highlighted lead point, lead-driven LD computation
+(\code{ld.matrix} / \code{ld.rds} / \code{ld.bfile}) is skipped with a warning, and
+point coloring uses precomputed \code{ld.col} / \code{ld2.col} columns if present.
+}
