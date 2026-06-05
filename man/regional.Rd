@@ -79,11 +79,11 @@ regional(
   gene.force.ignore_max_row = TRUE,
   biotype.keep = c("protein_coding", "lncRNA"),
   biotype.priority = c("protein_coding", "lncRNA"),
-  biotype.keep_all = FALSE,
+  biotype.keep.all = FALSE,
   exon.size = 1,
-  snp_color_missing = FALSE,
-  snp2_color_missing = FALSE,
-  biotype_keep_default = TRUE
+  snp.color.missing = FALSE,
+  snp2.color.missing = FALSE,
+  biotype.keep.default = TRUE
 )
 }
 \arguments{
@@ -141,14 +141,14 @@ for the gene track.}
 
 \item{gene.max_row, gene.max_n, gene.add, gene.force, gene.force.label, gene.force.ignore_max_row}{Gene-track layout controls (passed to \code{\link[=regional.track]{regional.track()}}).}
 
-\item{biotype.keep, biotype.priority, biotype.keep_all}{Biotype filters.}
+\item{biotype.keep, biotype.priority, biotype.keep.all}{Biotype filters.}
 
 \item{exon.size}{Exon-thickness in the gene track.}
 
-\item{snp_color_missing, snp2_color_missing}{Logical. Treat missing LD as
+\item{snp.color.missing, snp2.color.missing}{Logical. Treat missing LD as
 "color missing" instead of dropping the point.}
 
-\item{biotype_keep_default}{Logical. Use the default biotype keep set.}
+\item{biotype.keep.default}{Logical. Use the default biotype keep set.}
 }
 \value{
 A \code{ggplot} object combining the association panel and gene tracks.

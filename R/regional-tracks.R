@@ -1,6 +1,93 @@
 # Gene/exon track layout and the user-facing `regional.track()` builder used
 # by `regional()` and callable standalone for custom regional figures.
 
+# Load a package-bundled annotation track object (`tracks.b37` / `tracks.b38`)
+# by genome build. Works both when installed and under devtools::load_all().
+.gcanvas_bundled_tracks <- function(build = 38L) {
+  build <- as_int(build)[1]
+  if (is.na(build)) build <- 38L
+  if (build == 19L) build <- 37L
+  if (!(build %in% c(37L, 38L))) {
+    stop("Bundled tracks are only available for build 37 or 38.", call. = FALSE)
+  }
+  nm <- sprintf("tracks.b%s", build)
+  env <- new.env(parent = emptyenv())
+  ok <- tryCatch({
+    utils::data(list = nm, package = "gcanvas", envir = env)
+    TRUE
+  }, error = function(e) FALSE, warning = function(w) FALSE)
+  if (!isTRUE(ok) || !exists(nm, envir = env, inherits = FALSE)) {
+    stop(sprintf("Bundled annotation tracks '%s' not found in package 'gcanvas'.", nm), call. = FALSE)
+  }
+  get(nm, envir = env, inherits = FALSE)
+}
+
+# Query an in-memory tracks object (same schema as gtf2rds()/tracks.b3x) for a
+# region, returning the same shape as gtf_query_gene_exon().
+.gcanvas_tracks_query_gene_exon <- function(tracks, chrom, start, end) {
+  require_pkg("data.table")
+  empty_gene <- data.table::data.table(
+    gene_name = character(), gene_id = character(), biotype = character(), biotype_raw = character(),
+    strand = character(), start = numeric(), end = numeric()
+  )
+  empty_exon <- data.table::data.table(
+    gene_name = character(), gene_id = character(), transcript_id = character(),
+    exon_number = character(), strand = character(), start = numeric(), end = numeric()
+  )
+  chrom <- normalize.chrom(chrom)[1]
+  start <- as_int(start); end <- as_int(end)
+  if (is.na(start) || is.na(end) || end < start) stop("Invalid start/end.", call. = FALSE)
+
+  if (!is.list(tracks) || is.null(tracks$gene)) {
+    stop("In-memory tracks object must be a list with a $gene table.", call. = FALSE)
+  }
+  gene <- data.table::as.data.table(tracks$gene)
+  exon <- if (!is.null(tracks$exon)) data.table::as.data.table(tracks$exon) else data.table::copy(empty_exon)
+
+  gene_chr <- normalize.chrom(gene[["CHR"]])
+  gsel <- !is.na(gene_chr) & gene_chr == chrom &
+    gene[["end"]] >= start & gene[["start"]] <= end
+  gene <- gene[gsel]
+  if (nrow(gene)) {
+    biotype_raw <- if ("biotype_raw" %in% names(gene)) gene[["biotype_raw"]] else gene[["biotype"]]
+    gene <- data.table::data.table(
+      gene_name = as.character(gene[["gene_name"]]),
+      gene_id = as.character(gene[["gene_id"]]),
+      biotype = as.character(gene[["biotype"]]),
+      biotype_raw = as.character(biotype_raw),
+      strand = as.character(gene[["strand"]]),
+      start = as.numeric(gene[["start"]]),
+      end = as.numeric(gene[["end"]])
+    )
+  } else {
+    gene <- data.table::copy(empty_gene)
+  }
+
+  if (nrow(exon) && "CHR" %in% names(exon)) {
+    exon_chr <- normalize.chrom(exon[["CHR"]])
+    esel <- !is.na(exon_chr) & exon_chr == chrom &
+      exon[["end"]] >= start & exon[["start"]] <= end
+    exon <- exon[esel]
+    if (nrow(exon)) {
+      exon <- data.table::data.table(
+        gene_name = as.character(exon[["gene_name"]]),
+        gene_id = as.character(exon[["gene_id"]]),
+        transcript_id = as.character(exon[["transcript_id"]]),
+        exon_number = as.character(exon[["exon_number"]]),
+        strand = as.character(exon[["strand"]]),
+        start = as.numeric(exon[["start"]]),
+        end = as.numeric(exon[["end"]])
+      )
+    } else {
+      exon <- data.table::copy(empty_exon)
+    }
+  } else {
+    exon <- data.table::copy(empty_exon)
+  }
+
+  list(gene = gene, exon = exon, chrom = chrom)
+}
+
 .gcanvas_calc_label_space <- function(label, x_center, pos.range,
                               unit.text = 0.025,
                               margin_frac = 0.01) {
@@ -379,7 +466,11 @@ layout_gene_tracks <- function(gene_df, exon_df, pos.range, lead_pos,
 #' bespoke regional figure) can render below the association track.
 #'
 #' @param gtf_bgz Path to the bgzipped GTF (the `.rds` cache is located
-#'   alongside it).
+#'   alongside it). Optional when `tracks` is supplied.
+#' @param tracks Optional in-memory annotation object (the same list shape as
+#'   produced by [gtf2rds()], e.g. the bundled [tracks.b37] / [tracks.b38]).
+#'   When supplied, gene/exon records are taken from it directly and `gtf_bgz`
+#'   is ignored (no tabix query is performed).
 #' @param chrom Chromosome of the region.
 #' @param pos.range Numeric length-2 vector `(start, end)` in bp.
 #' @param y.max Y-axis maximum from the association panel (for proportioning).
@@ -402,7 +493,8 @@ layout_gene_tracks <- function(gene_df, exon_df, pos.range, lead_pos,
 #' @return A list of layout tables (gene, exon, label) consumed by the
 #'   regional plotter.
 #' @export
-regional.track <- function(gtf_bgz, chrom, pos.range, y.max, lead_pos,
+regional.track <- function(gtf_bgz = NULL, chrom, pos.range, y.max, lead_pos,
+                                   tracks = NULL,
                                    keep_biotype = NULL,
                                    gene_max_levels = 6L,
                                    gene_max_n = 50L,
@@ -433,12 +525,22 @@ regional.track <- function(gtf_bgz, chrom, pos.range, y.max, lead_pos,
     if (!("lncrna" %in% keep_lower)) lncrna_symbol_only <- FALSE
   }
 
-  anno <- gtf_query_gene_exon(
-    gtf_bgz, chrom = chrom,
-    start = min(pos.range), end = max(pos.range),
-    features = c("gene","exon"),
-    keep_biotype = NULL
-  )
+  if (!is.null(tracks)) {
+    anno <- .gcanvas_tracks_query_gene_exon(
+      tracks, chrom = chrom,
+      start = min(pos.range), end = max(pos.range)
+    )
+  } else {
+    if (is.null(gtf_bgz) || !length(gtf_bgz) || is.na(gtf_bgz[1]) || !nzchar(as.character(gtf_bgz[1]))) {
+      stop("regional.track: either `tracks` or `gtf_bgz` must be supplied.", call. = FALSE)
+    }
+    anno <- gtf_query_gene_exon(
+      gtf_bgz, chrom = chrom,
+      start = min(pos.range), end = max(pos.range),
+      features = c("gene","exon"),
+      keep_biotype = NULL
+    )
+  }
 
   gene <- data.table::as.data.table(anno$gene)
   exon <- data.table::as.data.table(anno$exon)

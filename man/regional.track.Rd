@@ -5,11 +5,12 @@
 \title{Build gene/exon tracks for a regional plot}
 \usage{
 regional.track(
-  gtf_bgz,
+  gtf_bgz = NULL,
   chrom,
   pos.range,
   y.max,
   lead_pos,
+  tracks = NULL,
   keep_biotype = NULL,
   gene_max_levels = 6L,
   gene_max_n = 50L,
@@ -27,7 +28,7 @@ regional.track(
 }
 \arguments{
 \item{gtf_bgz}{Path to the bgzipped GTF (the \code{.rds} cache is located
-alongside it).}
+alongside it). Optional when \code{tracks} is supplied.}
 
 \item{chrom}{Chromosome of the region.}
 
@@ -36,6 +37,11 @@ alongside it).}
 \item{y.max}{Y-axis maximum from the association panel (for proportioning).}
 
 \item{lead_pos}{Position of the lead variant (used for label spacing).}
+
+\item{tracks}{Optional in-memory annotation object (the same list shape as
+produced by \code{\link[=gtf2rds]{gtf2rds()}}, e.g. the bundled \link{tracks.b37} / \link{tracks.b38}).
+When supplied, gene/exon records are taken from it directly and \code{gtf_bgz}
+is ignored (no tabix query is performed).}
 
 \item{keep_biotype}{Character vector of biotypes to keep (default
 \code{c("protein_coding", "lncRNA")} unless \code{include_other_biotypes} is set).}

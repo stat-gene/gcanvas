@@ -42,7 +42,7 @@ utils::globalVariables(c(
   "end.degree", "ensg_id",
   "feature", "flank_color", "forced", "forced_threshold",
   "gene_id", "gene_name", "gene_prio", "gene_y",
-  "group", "het_rate", "hjust", "hl", "hl_col",
+  "group", "has_lead", "het_rate", "hjust", "hl", "hl_col",
   "i.a1_input", "i.input_idx", "i.markerID",
   "i_local", "idx", "input_idx", "input_order",
   "is_angle_270", "is_angle_90", "is_angle_repel_safe", "is_angle_zero",

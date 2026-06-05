@@ -5,7 +5,7 @@
 \alias{tracks.b37}
 \title{Bundled gene / exon annotation tracks (GRCh37)}
 \format{
-A list with \code{genes} and \code{exons} \code{data.table}s.
+A list with \code{gene} and \code{exon} \code{data.table}s (and a \code{meta} list).
 }
 \source{
 Derived from GENCODE GRCh37 annotation.

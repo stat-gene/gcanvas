@@ -4,7 +4,7 @@
 #' consumed by [regional()] and [regional.track()] when no custom GTF is
 #' supplied. Built from a GENCODE GTF via [gtf2rds()].
 #'
-#' @format A list with `genes` and `exons` `data.table`s.
+#' @format A list with `gene` and `exon` `data.table`s (and a `meta` list).
 #' @keywords datasets
 #' @source Derived from GENCODE GRCh37 annotation.
 #' @name tracks.b37
@@ -16,7 +16,7 @@
 #' consumed by [regional()] and [regional.track()] when no custom GTF is
 #' supplied. Built from a GENCODE GTF via [gtf2rds()].
 #'
-#' @format A list with `genes` and `exons` `data.table`s.
+#' @format A list with `gene` and `exon` `data.table`s (and a `meta` list).
 #' @keywords datasets
 #' @source Derived from GENCODE GRCh38 annotation.
 #' @name tracks.b38

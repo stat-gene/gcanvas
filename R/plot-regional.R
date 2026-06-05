@@ -354,11 +354,11 @@
 #'   for the gene track.
 #' @param gene.max_row,gene.max_n,gene.add,gene.force,gene.force.label,gene.force.ignore_max_row
 #'   Gene-track layout controls (passed to [regional.track()]).
-#' @param biotype.keep,biotype.priority,biotype.keep_all Biotype filters.
+#' @param biotype.keep,biotype.priority,biotype.keep.all Biotype filters.
 #' @param exon.size Exon-thickness in the gene track.
-#' @param snp_color_missing,snp2_color_missing Logical. Treat missing LD as
+#' @param snp.color.missing,snp2.color.missing Logical. Treat missing LD as
 #'   "color missing" instead of dropping the point.
-#' @param biotype_keep_default Logical. Use the default biotype keep set.
+#' @param biotype.keep.default Logical. Use the default biotype keep set.
 #'
 #' @return A `ggplot` object combining the association panel and gene tracks.
 #' @export
@@ -415,11 +415,11 @@ regional <- function(data,
                      gene.force.ignore_max_row = TRUE,
                      biotype.keep = c("protein_coding", "lncRNA"),
                      biotype.priority = c("protein_coding", "lncRNA"),
-                     biotype.keep_all = FALSE,
+                     biotype.keep.all = FALSE,
                      exon.size = 1,
-                     snp_color_missing = FALSE,
-                     snp2_color_missing = FALSE,
-                     biotype_keep_default = TRUE) {
+                     snp.color.missing = FALSE,
+                     snp2.color.missing = FALSE,
+                     biotype.keep.default = TRUE) {
   df <- data
   require_pkg(c("ggplot2", "RColorBrewer", "scales", "data.table"))
 
@@ -1052,9 +1052,10 @@ regional <- function(data,
   prepare_tracks <- function() {
     tracks <- NULL
     gene_meta <- NULL
-    if (isTRUE(show.gene) && !is.null(gtf) && nzchar(gtf)) {
+    use_gtf <- !is.null(gtf) && length(gtf) && !is.na(gtf[1]) && nzchar(as.character(gtf[1]))
+    if (isTRUE(show.gene)) {
       biotype.keep.use <- biotype.keep
-      include_other_biotypes <- isTRUE(biotype.keep_all)
+      include_other_biotypes <- isTRUE(biotype.keep.all)
       if (!is.null(biotype.keep.use)) {
         bk <- unique(tolower(as.character(biotype.keep.use)))
         bk <- bk[!is.na(bk) & nzchar(bk)]
@@ -1063,14 +1064,30 @@ regional <- function(data,
           include_other_biotypes <- TRUE
         }
       }
-      lncrna_symbol_only_use <- isTRUE(biotype_keep_default) &&
+      lncrna_symbol_only_use <- isTRUE(biotype.keep.default) &&
         !isTRUE(include_other_biotypes) &&
         !is.null(biotype.keep.use) &&
         any(tolower(as.character(biotype.keep.use)) %in% "lncrna", na.rm = TRUE)
-      gtf_bgz <- if (grepl("\\.bgz$", gtf, ignore.case = TRUE)) gtf else gtf_prepare_tabix(gtf, sort = "auto", chr_order = "natural")
+      track_src_bgz <- NULL
+      track_src_obj <- NULL
+      if (isTRUE(use_gtf)) {
+        track_src_bgz <- if (grepl("\\.bgz$", gtf, ignore.case = TRUE)) gtf else gtf_prepare_tabix(gtf, sort = "auto", chr_order = "natural")
+      } else {
+        # No GTF supplied: fall back to the package-bundled annotation tracks
+        # (tracks.b37 / tracks.b38), selected by `build`.
+        track_src_obj <- tryCatch(
+          .gcanvas_bundled_tracks(build = build),
+          error = function(e) {
+            .gcanvas_note("gcanvas::regional", sprintf("gene track skipped: %s", conditionMessage(e)))
+            NULL
+          }
+        )
+      }
       lead_pos_for_tracks <- if (isTRUE(has_lead) && is.finite(pos)) pos else mean(pos.range)
+      if (!is.null(track_src_bgz) || !is.null(track_src_obj)) {
       tracks <- regional.track(
-        gtf_bgz = gtf_bgz,
+        gtf_bgz = track_src_bgz,
+        tracks = track_src_obj,
         chrom = chrom,
         pos.range = pos.range,
         y.max = y.max0,
@@ -1089,6 +1106,7 @@ regional <- function(data,
         units = units
       )
       gene_meta <- tracks$meta
+      }
     }
     hl_map <- .gcanvas_normalize_highlight_map(hl.gene, hl.gene.color)
     if (!is.null(hl_map) && isTRUE(show.gene) && !is.null(tracks) && nrow(tracks$gene)) {
@@ -1149,13 +1167,13 @@ regional <- function(data,
   lead_snp2 <- if (isTRUE(use_snp2)) snp2 else NULL
   lead_snps <- if (isTRUE(use_snp2)) c(lead_snp, lead_snp2) else lead_snp
   lead1_color <- as.character(snp.color)[1]
-  if (!isTRUE(use_snp2) && snp_color_missing) {
+  if (!isTRUE(use_snp2) && snp.color.missing) {
     lead1_color <- tail(ldcolorset, 1)
   } else if (is.na(lead1_color) || !nzchar(lead1_color) || tolower(lead1_color) == "auto") {
     lead1_color <- if (isTRUE(use_snp2)) default_snp_color else tail(ldcolorset, 1)
   }
   lead2_color <- as.character(snp2.color)[1]
-  if (snp2_color_missing) {
+  if (snp2.color.missing) {
     lead2_color <- default_snp2_color
   } else if (is.na(lead2_color) || !nzchar(lead2_color) || tolower(lead2_color) == "auto") {
     lead2_color <- default_snp2_color
