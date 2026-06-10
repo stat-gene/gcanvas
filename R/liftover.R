@@ -121,7 +121,8 @@
 #' @param liftover.chain Explicit chain file path, or `"auto"` (the default;
 #'   `NULL` is treated the same) to resolve from `liftover.dir` / the bundled
 #'   chains.
-#' @param SNP,CHR,POS Column names in `df` for the SNP id, chromosome, and position.
+#' @param snp.col,chrom.col,pos.col Column names in `df` for the SNP id,
+#'   chromosome, and position.
 #' @param rm.tmp Logical. Remove temporary BED files when done.
 #' @param silent Logical. Suppress progress notes.
 #'
@@ -131,7 +132,7 @@
 liftover <- function(df, from = 37, to = 38,
                      liftover.dir = NULL,
                      liftover.chain = "auto",
-                     SNP = "SNP", CHR = "CHR", POS = "POS",
+                     snp.col = "SNP", chrom.col = "CHR", pos.col = "POS",
                      rm.tmp = TRUE, silent = FALSE) {
   require_pkg("data.table")
 
@@ -157,9 +158,9 @@ liftover <- function(df, from = 37, to = 38,
   is_dt <- data.table::is.data.table(df)
   rn0 <- if (!is_dt) rownames(df) else NULL
   dt <- if (is_dt) data.table::copy(df) else data.table::as.data.table(df)
-  snp_use <- .gcanvas_resolve_colname(names(dt), SNP, aliases = character(), required = TRUE, arg_label = "SNP")
-  chr_use <- .gcanvas_resolve_colname(names(dt), CHR, aliases = character(), required = TRUE, arg_label = "CHR")
-  pos_use <- .gcanvas_resolve_colname(names(dt), POS, aliases = character(), required = TRUE, arg_label = "POS")
+  snp_use <- .gcanvas_resolve_colname(names(dt), snp.col, aliases = character(), required = TRUE, arg_label = "snp.col")
+  chr_use <- .gcanvas_resolve_colname(names(dt), chrom.col, aliases = character(), required = TRUE, arg_label = "chrom.col")
+  pos_use <- .gcanvas_resolve_colname(names(dt), pos.col, aliases = character(), required = TRUE, arg_label = "pos.col")
   finalize <- function(xdt) {
     if (is_dt) return(xdt)
     out <- as.data.frame(xdt, stringsAsFactors = FALSE)
@@ -224,7 +225,7 @@ liftover_positions <- function(chrom, pos, from, to, liftover.dir, liftover.chai
   key <- paste0("K", seq_along(pos))
   tmp <- data.frame(SNP = key, CHR = rep(normalize.chrom(chrom)[1], length(pos)), POS = pos, stringsAsFactors = FALSE)
   out <- liftover(tmp, from = from, to = to, liftover.dir = liftover.dir,
-                  liftover.chain = liftover.chain, SNP = "SNP", CHR = "CHR", POS = "POS",
+                  liftover.chain = liftover.chain, snp.col = "SNP", chrom.col = "CHR", pos.col = "POS",
                   silent = TRUE)
   to_label <- .gcanvas_build_num(to)
   if (is.na(to_label)) to_label <- as.character(to)[1]

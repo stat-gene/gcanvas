@@ -787,7 +787,7 @@ regional <- function(data,
       liftover.dir <- as.character(liftover.dir)[1]
       .gcanvas_note("gcanvas::regioanl", sprintf("Liftover GWAS: b%s -> b%s", build.gwas, build))
       tmp <- data.frame(SNP = df0$snp, CHR = df0$CHR, POS = df0$POS, stringsAsFactors = FALSE)
-      tmp2 <- liftover(tmp, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain, SNP = "SNP", CHR = "CHR", POS = "POS", silent = TRUE)
+      tmp2 <- liftover(tmp, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain, snp.col = "SNP", chrom.col = "CHR", pos.col = "POS", silent = TRUE)
       pos_new <- tmp2[[paste0("POS_b", build)]]
       drop_n <- sum(is.na(pos_new), na.rm = TRUE)
       if (drop_n) .gcanvas_warn_msg(sprintf("Dropped %d variants (liftover NA).", drop_n))

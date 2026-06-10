@@ -10,9 +10,9 @@ liftover(
   to = 38,
   liftover.dir = NULL,
   liftover.chain = "auto",
-  SNP = "SNP",
-  CHR = "CHR",
-  POS = "POS",
+  snp.col = "SNP",
+  chrom.col = "CHR",
+  pos.col = "POS",
   rm.tmp = TRUE,
   silent = FALSE
 )
@@ -30,7 +30,8 @@ chain files. Chains are looked up in \code{liftover.dir/chain} and \code{liftove
 \code{NULL} is treated the same) to resolve from \code{liftover.dir} / the bundled
 chains.}
 
-\item{SNP, CHR, POS}{Column names in \code{df} for the SNP id, chromosome, and position.}
+\item{snp.col, chrom.col, pos.col}{Column names in \code{df} for the SNP id,
+chromosome, and position.}
 
 \item{rm.tmp}{Logical. Remove temporary BED files when done.}
 
