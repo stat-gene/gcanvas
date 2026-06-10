@@ -118,8 +118,9 @@
 #'   string aliases (see Description). Supported pairs: 37<->38 and 18->19.
 #' @param liftover.dir Optional directory containing the `liftOver` binary and
 #'   chain files. Chains are looked up in `liftover.dir/chain` and `liftover.dir`.
-#' @param liftover.chain Optional explicit chain file path, or `"auto"` (the
-#'   default) to resolve from `liftover.dir` / the bundled chains.
+#' @param liftover.chain Explicit chain file path, or `"auto"` (the default;
+#'   `NULL` is treated the same) to resolve from `liftover.dir` / the bundled
+#'   chains.
 #' @param SNP,CHR,POS Column names in `df` for the SNP id, chromosome, and position.
 #' @param rm.tmp Logical. Remove temporary BED files when done.
 #' @param silent Logical. Suppress progress notes.
@@ -129,7 +130,7 @@
 #' @export
 liftover <- function(df, from = 37, to = 38,
                      liftover.dir = NULL,
-                     liftover.chain = NULL,
+                     liftover.chain = "auto",
                      SNP = "SNP", CHR = "CHR", POS = "POS",
                      rm.tmp = TRUE, silent = FALSE) {
   require_pkg("data.table")
@@ -217,7 +218,7 @@ liftover <- function(df, from = 37, to = 38,
   finalize(dt)
 }
 
-liftover_positions <- function(chrom, pos, from, to, liftover.dir, liftover.chain = NULL) {
+liftover_positions <- function(chrom, pos, from, to, liftover.dir, liftover.chain = "auto") {
   pos <- .gcanvas_as_num2(pos)
   if (!length(pos)) return(pos)
   key <- paste0("K", seq_along(pos))

@@ -9,7 +9,7 @@ liftover(
   from = 37,
   to = 38,
   liftover.dir = NULL,
-  liftover.chain = NULL,
+  liftover.chain = "auto",
   SNP = "SNP",
   CHR = "CHR",
   POS = "POS",
@@ -26,8 +26,9 @@ string aliases (see Description). Supported pairs: 37<->38 and 18->19.}
 \item{liftover.dir}{Optional directory containing the \code{liftOver} binary and
 chain files. Chains are looked up in \code{liftover.dir/chain} and \code{liftover.dir}.}
 
-\item{liftover.chain}{Optional explicit chain file path, or \code{"auto"} (the
-default) to resolve from \code{liftover.dir} / the bundled chains.}
+\item{liftover.chain}{Explicit chain file path, or \code{"auto"} (the default;
+\code{NULL} is treated the same) to resolve from \code{liftover.dir} / the bundled
+chains.}
 
 \item{SNP, CHR, POS}{Column names in \code{df} for the SNP id, chromosome, and position.}
 
