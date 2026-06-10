@@ -16,6 +16,17 @@ Description: A toolkit for visualizing and analyzing genomic association data,
 License: MIT + file LICENSE
 URL: https://github.com/stat-gene/gcanvas
 BugReports: https://github.com/stat-gene/gcanvas/issues
+SystemRequirements: Some functions shell out to external command-line tools
+    (install only what your workflow needs). PLINK 2
+    (https://www.cog-genomics.org/plink/2.0/) for pca(), pca.projection(),
+    plink.extract(), hetmiss(); PLINK 1.9
+    (https://www.cog-genomics.org/plink/1.9/) is additionally required for the
+    multi-input merge step of plink.extract(). UCSC liftOver for liftover()
+    (recommended install: conda install bioconda::ucsc-liftover; or download
+    from https://hgdownload.soe.ucsc.edu/admin/exe/); chain files for the
+    common build pairs are bundled. tabix/htslib
+    (http://www.htslib.org/) for the GTF paths of gtf2rds(), regional(), and
+    geneinfo().
 Encoding: UTF-8
 LazyData: true
 LazyDataCompression: xz

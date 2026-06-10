@@ -48,7 +48,7 @@ regional(
   units = "cm",
   build = 38L,
   build.gwas = NULL,
-  liftover.dir = NULL,
+  liftover = NULL,
   liftover.chain = NULL,
   ld.matrix = NULL,
   ld.rds = NULL,
@@ -121,7 +121,9 @@ range and break-and-rescale controls.}
 
 \item{build, build.gwas}{Genome build of the GTF (and of \code{data} if different).}
 
-\item{liftover.dir, liftover.chain}{Liftover controls when builds differ.}
+\item{liftover, liftover.chain}{Liftover controls when builds differ:
+\code{liftover} is the path to the \code{liftOver} executable (or \code{NULL} to use one
+on \code{PATH}); chains are auto-resolved from the bundled files.}
 
 \item{ld.matrix, ld.rds, ld.bfile, ld.cache.dir, threads}{LD reference inputs.}
 

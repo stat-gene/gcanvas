@@ -342,7 +342,9 @@
 #'   Significance-line controls.
 #' @param plot.width,units Plot-size hints for label placement.
 #' @param build,build.gwas Genome build of the GTF (and of `data` if different).
-#' @param liftover.dir,liftover.chain Liftover controls when builds differ.
+#' @param liftover,liftover.chain Liftover controls when builds differ:
+#'   `liftover` is the path to the `liftOver` executable (or `NULL` to use one
+#'   on `PATH`); chains are auto-resolved from the bundled files.
 #' @param ld.matrix,ld.rds,ld.bfile,ld.cache.dir,threads LD reference inputs.
 #' @param ld.color,snp.color,snp2.color Color scales for LD and points.
 #' @param shared.mode,shared.color,shared.cutoff,shared.alpha Shared-signal
@@ -384,7 +386,7 @@ regional <- function(data,
                      plot.width = NULL, units = "cm",
                      build = 38L,
                      build.gwas = NULL,
-                     liftover.dir = NULL,
+                     liftover = NULL,
                      liftover.chain = NULL,
                      ld.matrix = NULL,
                      ld.rds = NULL,
@@ -780,14 +782,13 @@ regional <- function(data,
     build <- as_int(build)
     build.gwas <- as_int(build.gwas)
     if (!is.na(build) && !is.na(build.gwas) && build != build.gwas) {
-      has_liftover_dir <- !is.null(liftover.dir) && length(liftover.dir) > 0L && !is.na(liftover.dir[1]) && nzchar(as.character(liftover.dir[1]))
-      if (!has_liftover_dir) {
-        stop("build and build.gwas differ, but liftover.dir is NULL/empty. Provide liftover.dir or set build.gwas = build.", call. = FALSE)
+      lift_bin_chk <- .gcanvas_resolve_liftover_bin(liftover)
+      if (is.na(lift_bin_chk)) {
+        stop("build and build.gwas differ, but the liftOver binary was not found. Set `liftover` to the liftOver executable path or put `liftOver` on PATH (download: https://hgdownload.soe.ucsc.edu/admin/exe/), or set build.gwas = build.", call. = FALSE)
       }
-      liftover.dir <- as.character(liftover.dir)[1]
       .gcanvas_note("gcanvas::regioanl", sprintf("Liftover GWAS: b%s -> b%s", build.gwas, build))
       tmp <- data.frame(SNP = df0$snp, CHR = df0$CHR, POS = df0$POS, stringsAsFactors = FALSE)
-      tmp2 <- liftover(tmp, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain, snp.col = "SNP", chrom.col = "CHR", pos.col = "POS", silent = TRUE)
+      tmp2 <- liftover(tmp, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain, snp.col = "SNP", chrom.col = "CHR", pos.col = "POS", silent = TRUE)
       pos_new <- tmp2[[paste0("POS_b", build)]]
       drop_n <- sum(is.na(pos_new), na.rm = TRUE)
       if (drop_n) .gcanvas_warn_msg(sprintf("Dropped %d variants (liftover NA).", drop_n))
@@ -795,10 +796,10 @@ regional <- function(data,
       df0 <- df0[!is.na(POS)]
       if (!nrow(df0)) stop("No variants left after liftover.", call. = FALSE)
       if (has_lead) {
-        pos <- liftover_positions(chrom, pos, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
+        pos <- liftover_positions(chrom, pos, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain)
       }
-      if (isTRUE(use_snp2)) pos2 <- liftover_positions(chrom, pos2, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
-      pos.range <- liftover_positions(chrom, pos.range, from = build.gwas, to = build, liftover.dir = liftover.dir, liftover.chain = liftover.chain)
+      if (isTRUE(use_snp2)) pos2 <- liftover_positions(chrom, pos2, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain)
+      pos.range <- liftover_positions(chrom, pos.range, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain)
       if (any(is.na(pos.range)) || (has_lead && is.na(pos)) || (isTRUE(use_snp2) && is.na(pos2))) stop("Lead/pos.range liftover failed.", call. = FALSE)
       pos.range <- c(min(pos.range), max(pos.range))
     }

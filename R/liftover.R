@@ -29,9 +29,8 @@
 }
 
 # Resolve a chain file path. Honours an explicit `liftover.chain`; otherwise
-# searches (in order) `liftover.dir/chain`, `liftover.dir`, and the package's
-# bundled `inst/extdata` chains for a name matching the requested build pair.
-.gcanvas_resolve_chain <- function(from, to, liftover.dir, liftover.chain) {
+# resolves from the package's bundled `inst/extdata` chains by build pair.
+.gcanvas_resolve_chain <- function(from, to, liftover.chain) {
   chain0 <- as.character(liftover.chain)[1]
   auto <- is.null(liftover.chain) || length(liftover.chain) == 0L ||
     is.na(chain0) || !nzchar(chain0) || toupper(chain0) == "AUTO"
@@ -41,35 +40,50 @@
   to_key <- .gcanvas_build_key(to)
   if (is.na(from_key) || is.na(to_key)) return(NA_character_)
   names <- .gcanvas_chain_candidates(from_key, to_key)
-  # Legacy generic naming honoured in user-supplied dirs.
-  legacy <- sprintf("%s_to_%s.chain.gz", from_key, to_key)
-  names <- unique(c(names, legacy))
   if (!length(names)) return(NA_character_)
 
-  dirs <- character()
-  if (!is.null(liftover.dir) && length(liftover.dir) && !is.na(liftover.dir[1]) && nzchar(liftover.dir[1])) {
-    dirs <- c(file.path(liftover.dir, "chain"), liftover.dir)
-  }
   bundle_dir <- system.file("extdata", package = "gcanvas")
-  if (nzchar(bundle_dir)) dirs <- c(dirs, bundle_dir)
-
-  for (d in dirs) {
-    for (nm in names) {
-      p <- file.path(d, nm)
-      if (file.exists(p)) return(p)
-    }
+  if (!nzchar(bundle_dir)) return(NA_character_)
+  for (nm in names) {
+    p <- file.path(bundle_dir, nm)
+    if (file.exists(p)) return(p)
   }
   NA_character_
 }
 
-# Locate the UCSC liftOver binary: prefer `liftover.dir/liftOver`, then PATH.
-.gcanvas_resolve_liftover_bin <- function(liftover.dir) {
-  if (!is.null(liftover.dir) && length(liftover.dir) && !is.na(liftover.dir[1]) && nzchar(liftover.dir[1])) {
-    p <- file.path(liftover.dir, "liftOver")
-    if (file.exists(p)) return(p)
+# Locate the UCSC liftOver binary. Uses the user-supplied `liftover` value when
+# given (a file path or a command name), otherwise defaults to looking up
+# `liftOver` on the environment `PATH`. The search mirrors the PLINK resolver:
+# direct file -> `Sys.which` -> common bin dirs -> login-shell `command -v`
+# (the last step finds conda-env installs that R's own PATH may not expose).
+.gcanvas_resolve_liftover_bin <- function(liftover = NULL) {
+  cmd <- if (!is.null(liftover) && length(liftover) && !is.na(liftover[1]) && nzchar(liftover[1])) {
+    as.character(liftover[1])
+  } else {
+    "liftOver"
   }
-  w <- Sys.which("liftOver")
+  if (file.exists(cmd)) return(abs_path(cmd))
+  w <- Sys.which(cmd)
   if (nzchar(w)) return(unname(w))
+  cand_dir <- c(path.expand("~/bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
+  cand <- file.path(cand_dir, basename(cmd))
+  hit <- cand[file.exists(cand)]
+  if (length(hit)) return(abs_path(hit[1]))
+  shs <- unique(c(Sys.getenv("SHELL", unset = "/bin/sh"), "/bin/zsh", "/bin/bash", "/bin/sh"))
+  shs <- shs[file.exists(shs)]
+  for (sh in shs) {
+    out <- tryCatch(
+      suppressWarnings(system2(sh, c("-lc", sprintf("command -v %s 2>/dev/null", shQuote(cmd))), stdout = TRUE, stderr = TRUE)),
+      error = function(e) character(0)
+    )
+    out <- trimws(as.character(out))
+    out <- out[nzchar(out)]
+    if (!length(out)) next
+    last <- out[length(out)]
+    if (file.exists(last)) return(abs_path(last))
+    p2 <- Sys.which(last)
+    if (nzchar(p2)) return(unname(p2))
+  }
   NA_character_
 }
 
@@ -105,22 +119,38 @@
 #' `GRCh37`, and `36`/`18`/`hg18`/`NCBI36`.
 #'
 #' When `liftover.chain = "auto"` (the default), the chain file is resolved
-#' automatically: first from `liftover.dir` (a `chain/` subdir or the dir
-#' itself), then from the chain files bundled with the package
+#' automatically from the chain files bundled with the package
 #' (`GRCh37<->GRCh38` from Ensembl and `hg18->hg19` from UCSC). The chromosome
 #' naming convention of the chosen chain (UCSC `chr1` vs Ensembl `1`) is
 #' detected from its header and the input coordinates are reformatted to match,
-#' so mixed-convention inputs lift correctly. The `liftOver` binary itself is
-#' not bundled; it is located via `liftover.dir` or the system `PATH`.
+#' so mixed-convention inputs lift correctly. For build pairs that are not
+#' bundled, pass an explicit chain file via `liftover.chain`.
+#'
+#' The `liftOver` binary itself is not bundled. When the `liftover` argument is
+#' `NULL`, the executable is resolved automatically by searching the system
+#' `PATH` (and common install locations, including conda environments), so a
+#' `liftOver` reachable from your shell is used without any extra configuration.
+#' The recommended way to install it is via conda:
+#' \preformatted{
+#' conda install bioconda::ucsc-liftover
+#' }
+#' Alternatively, download the UCSC binary directly (Linux x86_64 example):
+#' \preformatted{
+#' wget https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
+#' chmod +x ./liftOver
+#' }
+#' Binaries for other platforms are under
+#' <https://hgdownload.soe.ucsc.edu/admin/exe/>.
 #'
 #' @param df A `data.frame`/`data.table` of variants.
 #' @param from,to Source and destination genome builds. Accepts numeric or
 #'   string aliases (see Description). Supported pairs: 37<->38 and 18->19.
-#' @param liftover.dir Optional directory containing the `liftOver` binary and
-#'   chain files. Chains are looked up in `liftover.dir/chain` and `liftover.dir`.
+#' @param liftover Optional path to the `liftOver` executable (a file path or a
+#'   command name on `PATH`). When `NULL` (the default), `liftOver` is resolved
+#'   automatically from the system `PATH` and common install locations
+#'   (including conda environments).
 #' @param liftover.chain Explicit chain file path, or `"auto"` (the default;
-#'   `NULL` is treated the same) to resolve from `liftover.dir` / the bundled
-#'   chains.
+#'   `NULL` is treated the same) to resolve from the bundled chains.
 #' @param snp.col,chrom.col,pos.col Column names in `df` for the SNP id,
 #'   chromosome, and position.
 #' @param rm.tmp Logical. Remove temporary BED files when done.
@@ -130,25 +160,25 @@
 #'   columns indicating which variants failed to lift.
 #' @export
 liftover <- function(df, from = 37, to = 38,
-                     liftover.dir = NULL,
+                     liftover = NULL,
                      liftover.chain = "auto",
                      snp.col = "SNP", chrom.col = "CHR", pos.col = "POS",
                      rm.tmp = TRUE, silent = FALSE) {
   require_pkg("data.table")
 
-  liftover.chain <- .gcanvas_resolve_chain(from, to, liftover.dir, liftover.chain)
+  liftover.chain <- .gcanvas_resolve_chain(from, to, liftover.chain)
   if (is.na(liftover.chain) || !nzchar(liftover.chain) || !file.exists(liftover.chain)) {
     if (!silent) {
       message("No chain file found for build ", from, " -> ", to,
-              " (looked in liftover.dir and the bundled chains).")
+              " (no bundled chain; pass `liftover.chain` for this build pair).")
     }
     return(df)
   }
   chain_style <- .gcanvas_chain_seqstyle(liftover.chain)
 
-  lift_bin <- .gcanvas_resolve_liftover_bin(liftover.dir)
+  lift_bin <- .gcanvas_resolve_liftover_bin(liftover)
   if (is.na(lift_bin)) {
-    if (!silent) message("No liftOver binary found (set liftover.dir or put `liftOver` on PATH).")
+    if (!silent) message("No liftOver binary found. Set `liftover` to the liftOver executable path or put `liftOver` on PATH (download: https://hgdownload.soe.ucsc.edu/admin/exe/).")
     return(df)
   }
 
@@ -219,17 +249,18 @@ liftover <- function(df, from = 37, to = 38,
   finalize(dt)
 }
 
-liftover_positions <- function(chrom, pos, from, to, liftover.dir, liftover.chain = "auto") {
+liftover_positions <- function(chrom, pos, from, to, liftover = NULL, liftover.chain = "auto") {
   pos <- .gcanvas_as_num2(pos)
   if (!length(pos)) return(pos)
   key <- paste0("K", seq_along(pos))
   tmp <- data.frame(SNP = key, CHR = rep(normalize.chrom(chrom)[1], length(pos)), POS = pos, stringsAsFactors = FALSE)
-  out <- liftover(tmp, from = from, to = to, liftover.dir = liftover.dir,
+  out <- liftover(tmp, from = from, to = to, liftover = liftover,
                   liftover.chain = liftover.chain, snp.col = "SNP", chrom.col = "CHR", pos.col = "POS",
                   silent = TRUE)
   to_label <- .gcanvas_build_num(to)
   if (is.na(to_label)) to_label <- as.character(to)[1]
   pos2 <- out[[paste0("POS_b", to_label)]]
+  if (is.null(pos2)) return(rep(NA_real_, length(pos)))
   names(pos2) <- out$SNP
   unname(pos2[key])
 }

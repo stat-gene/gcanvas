@@ -38,12 +38,53 @@ need for your workflow:
 | Tool | Used by | macOS | Linux | Windows |
 |---|---|---|---|---|
 | `plink2` | `pca`, `pca.projection`, `plink.extract`, `hetmiss` | `brew install plink2` | apt / conda / native binary | Native binary on `PATH` |
+| `plink` (1.9) | `plink.extract` (multi-input merge), `hetmiss` (`plink.version="plink"`) | `brew install plink` | apt / conda / native binary | Native binary on `PATH` |
 | `tabix` (htslib) | `gtf2rds`, `regional` (GTF mode), `geneinfo` (GTF mode) | `brew install htslib` | `apt install tabix` / conda | **WSL required** |
 | UCSC `liftOver` | `liftover` | UCSC binary | UCSC binary | **WSL required** |
 
 The package itself loads on every OS (CI tests macOS / Linux / Windows). On
 Windows native, the LD / PCA / Manhattan / Q-Q / regional (LD-only) / circos
 paths work; GTF and liftover paths need WSL or a Linux/macOS shell.
+
+#### Downloading the binaries
+
+**PLINK.** `gcanvas` uses **PLINK 2** for most genotype operations and
+additionally needs **PLINK 1.9** for the multi-input merge in `plink.extract()`.
+Download the build for your platform and put it on your `PATH` (or pass the
+path via the function's `plink` argument):
+
+- PLINK 2: <https://www.cog-genomics.org/plink/2.0/>
+- PLINK 1.9: <https://www.cog-genomics.org/plink/1.9/>
+
+**UCSC `liftOver`.** The chain files for the common build pairs
+(GRCh37 ⟷ GRCh38, hg18 → hg19) ship with the package, so `liftover()` finds them
+automatically. You only need the `liftOver` executable, which is **not**
+bundled. The recommended way to install it is via conda:
+
+```sh
+conda install bioconda::ucsc-liftover
+```
+
+Alternatively, download the UCSC binary directly (Linux x86_64 example):
+
+```sh
+wget https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
+chmod +x ./liftOver
+```
+
+Binaries for other platforms are under
+<https://hgdownload.soe.ucsc.edu/admin/exe/>.
+
+When you don't pass the `liftover` argument, the executable is resolved
+automatically from your `PATH` and common install locations (including conda
+environments), so a conda-installed `liftOver` is picked up with no extra setup:
+
+```r
+# liftOver auto-resolved from PATH / conda env:
+liftover(df, from = 37, to = 38)
+# or point at the executable explicitly:
+liftover(df, from = 37, to = 38, liftover = "./liftOver")
+```
 
 ## What's inside
 

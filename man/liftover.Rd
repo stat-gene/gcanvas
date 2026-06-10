@@ -8,7 +8,7 @@ liftover(
   df,
   from = 37,
   to = 38,
-  liftover.dir = NULL,
+  liftover = NULL,
   liftover.chain = "auto",
   snp.col = "SNP",
   chrom.col = "CHR",
@@ -23,12 +23,13 @@ liftover(
 \item{from, to}{Source and destination genome builds. Accepts numeric or
 string aliases (see Description). Supported pairs: 37<->38 and 18->19.}
 
-\item{liftover.dir}{Optional directory containing the \code{liftOver} binary and
-chain files. Chains are looked up in \code{liftover.dir/chain} and \code{liftover.dir}.}
+\item{liftover}{Optional path to the \code{liftOver} executable (a file path or a
+command name on \code{PATH}). When \code{NULL} (the default), \code{liftOver} is resolved
+automatically from the system \code{PATH} and common install locations
+(including conda environments).}
 
 \item{liftover.chain}{Explicit chain file path, or \code{"auto"} (the default;
-\code{NULL} is treated the same) to resolve from \code{liftover.dir} / the bundled
-chains.}
+\code{NULL} is treated the same) to resolve from the bundled chains.}
 
 \item{snp.col, chrom.col, pos.col}{Column names in \code{df} for the SNP id,
 chromosome, and position.}
@@ -48,11 +49,26 @@ build to another. \code{from}/\code{to} accept \code{38}/\code{hg38}/\code{GRCh3
 }
 \details{
 When \code{liftover.chain = "auto"} (the default), the chain file is resolved
-automatically: first from \code{liftover.dir} (a \verb{chain/} subdir or the dir
-itself), then from the chain files bundled with the package
+automatically from the chain files bundled with the package
 (\verb{GRCh37<->GRCh38} from Ensembl and \code{hg18->hg19} from UCSC). The chromosome
 naming convention of the chosen chain (UCSC \code{chr1} vs Ensembl \code{1}) is
 detected from its header and the input coordinates are reformatted to match,
-so mixed-convention inputs lift correctly. The \code{liftOver} binary itself is
-not bundled; it is located via \code{liftover.dir} or the system \code{PATH}.
+so mixed-convention inputs lift correctly. For build pairs that are not
+bundled, pass an explicit chain file via \code{liftover.chain}.
+
+The \code{liftOver} binary itself is not bundled. When the \code{liftover} argument is
+\code{NULL}, the executable is resolved automatically by searching the system
+\code{PATH} (and common install locations, including conda environments), so a
+\code{liftOver} reachable from your shell is used without any extra configuration.
+The recommended way to install it is via conda:
+\preformatted{
+conda install bioconda::ucsc-liftover
+}
+Alternatively, download the UCSC binary directly (Linux x86_64 example):
+\preformatted{
+wget https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
+chmod +x ./liftOver
+}
+Binaries for other platforms are under
+\url{https://hgdownload.soe.ucsc.edu/admin/exe/}.
 }
