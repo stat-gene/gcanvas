@@ -238,7 +238,7 @@ liftover <- function(df, from = 37, to = 38,
 
   if (!nrow(lifted)) return(finalize(dt))
 
-  lifted <- lifted[, .(tmp_snp = V4, tmp_pos = suppressWarnings(as.numeric(V3)))]
+  lifted <- lifted[, .(tmp_snp = V4, tmp_pos = suppressWarnings(as.integer(as.numeric(V3))))]
   data.table::setnames(lifted, c("tmp_snp", "tmp_pos"), c(snp_use, paste0(pos_use, "_b", to_label)))
 
   dt[, ..ord := .I]
