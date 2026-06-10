@@ -20,11 +20,14 @@ liftover(
 \arguments{
 \item{df}{A \code{data.frame}/\code{data.table} of variants.}
 
-\item{from, to}{Source and destination genome builds (\code{37} or \code{38}).}
+\item{from, to}{Source and destination genome builds. Accepts numeric or
+string aliases (see Description). Supported pairs: 37<->38 and 18->19.}
 
-\item{liftover.dir}{Optional directory containing \code{liftOver} and chain files.}
+\item{liftover.dir}{Optional directory containing the \code{liftOver} binary and
+chain files. Chains are looked up in \code{liftover.dir/chain} and \code{liftover.dir}.}
 
-\item{liftover.chain}{Optional explicit chain file path.}
+\item{liftover.chain}{Optional explicit chain file path, or \code{"auto"} (the
+default) to resolve from \code{liftover.dir} / the bundled chains.}
 
 \item{SNP, CHR, POS}{Column names in \code{df} for the SNP id, chromosome, and position.}
 
@@ -38,6 +41,16 @@ columns indicating which variants failed to lift.
 }
 \description{
 Wraps the UCSC \code{liftOver} binary to translate variant coordinates from one
-build (e.g. \code{37}) to another (e.g. \code{38}). The chain file is auto-resolved
-from \code{liftover.dir} when not provided.
+build to another. \code{from}/\code{to} accept \code{38}/\code{hg38}/\code{GRCh38}, \code{37}/\code{19}/\code{hg19}/
+\code{GRCh37}, and \code{36}/\code{18}/\code{hg18}/\code{NCBI36}.
+}
+\details{
+When \code{liftover.chain = "auto"} (the default), the chain file is resolved
+automatically: first from \code{liftover.dir} (a \verb{chain/} subdir or the dir
+itself), then from the chain files bundled with the package
+(\verb{GRCh37<->GRCh38} from Ensembl and \code{hg18->hg19} from UCSC). The chromosome
+naming convention of the chosen chain (UCSC \code{chr1} vs Ensembl \code{1}) is
+detected from its header and the input coordinates are reformatted to match,
+so mixed-convention inputs lift correctly. The \code{liftOver} binary itself is
+not bundled; it is located via \code{liftover.dir} or the system \code{PATH}.
 }
