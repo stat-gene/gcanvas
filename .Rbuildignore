@@ -11,5 +11,6 @@
 ^\.gitignore$
 ^\.claude$
 ^reference$
+^docs$
 ^r-script-humming-coral\.md$
 ^LICENSE\.md$

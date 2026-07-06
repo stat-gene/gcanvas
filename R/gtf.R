@@ -364,33 +364,6 @@ gtf2rds <- function(gtf.bgz,
   out
 }
 
-.gcanvas_find_upward_file <- function(filename, start = getwd(), max_depth = 5L) {
-  filename <- as.character(filename)[1]
-  if (is.na(filename) || !nzchar(filename)) return(NULL)
-  dir0 <- abs_path(start)
-  max_depth <- as_int(max_depth)
-  if (is.na(max_depth) || max_depth < 0L) max_depth <- 0L
-  for (i in 0:max_depth) {
-    cand <- file.path(dir0, filename)
-    if (file.exists(cand)) return(abs_path(cand))
-    par0 <- dirname(dir0)
-    if (identical(par0, dir0)) break
-    dir0 <- par0
-  }
-  NULL
-}
-
-.gcanvas_default_tracks_rds <- function(build = 38L) {
-  build <- as_int(build)[1]
-  if (is.na(build)) build <- 38L
-  if (build == 19L) build <- 37L
-  if (!(build %in% c(37L, 38L))) stop("build must be 37 or 38.", call. = FALSE)
-  fname <- sprintf("gcanvas.tracks.b%s.rds", build)
-  path0 <- .gcanvas_find_upward_file(fname, start = getwd(), max_depth = 6L)
-  if (!is.null(path0) && nzchar(path0)) return(path0)
-  stop(sprintf("Default track RDS not found for build %s: %s", build, fname), call. = FALSE)
-}
-
 .geneinfo_load_reference <- function(build = 38L, gtf = NULL) {
   require_pkg("data.table")
   rds_path <- NULL
@@ -429,12 +402,13 @@ gtf2rds <- function(gtf.bgz,
         gtf2rds(gtf.bgz = gtf_bgz, build = build, out.rds = rds_path, overwrite = TRUE)
       }
     }
+    obj <- readRDS(rds_path)
   } else {
-    rds_path <- .gcanvas_default_tracks_rds(build = build)
+    obj <- .gcanvas_bundled_tracks(build = build)
+    rds_path <- sprintf("bundled:tracks.b%d", build)
   }
-  obj <- readRDS(rds_path)
   if (!is.list(obj) || is.null(obj$gene)) {
-    stop("Track RDS must contain $gene table.", call. = FALSE)
+    stop("Track data must contain a $gene table.", call. = FALSE)
   }
   gene_ref <- data.table::as.data.table(obj$gene)
   req <- c("CHR", "gene_name", "gene_id", "start", "end", "strand")
