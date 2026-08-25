@@ -1598,7 +1598,9 @@ regional <- function(data,
     return(list(lead_tbl = lead_tbl, dt = dt, lead_draw_map = empty_map, pass_cut = pass_cut))
   }
 
-  lead_map <- dt[!is.na(snp) & nzchar(snp), .SD[which.max(yval)], by = snp, .SDcols = c(".row_id", "CHR", "POS", "x", "ydraw", "ceiling")]
+  # Restrict the by-snp grouping to lead-table SNPs (only these survive the merge
+  # below); avoids grouping the full ~1e6-row cloud into ~1e6 single-row groups.
+  lead_map <- dt[!is.na(snp) & nzchar(snp) & snp %in% lead_tbl$snp, .SD[which.max(yval)], by = snp, .SDcols = c(".row_id", "CHR", "POS", "x", "ydraw", "ceiling")]
   data.table::setnames(
     lead_map,
     c(".row_id", "CHR", "POS", "x", "ydraw", "ceiling"),
@@ -1612,7 +1614,7 @@ regional <- function(data,
   if (!("ydraw_data" %in% names(lead_tbl))) lead_tbl[, ydraw_data := NA_real_]
   if (!("ceiling_data" %in% names(lead_tbl))) lead_tbl[, ceiling_data := 0L]
 
-  lead_col_map <- dt[!is.na(snp) & nzchar(snp), .SD[which.max(yval)], by = snp, .SDcols = "plot_color"]
+  lead_col_map <- dt[!is.na(snp) & nzchar(snp) & snp %in% lead_tbl$snp, .SD[which.max(yval)], by = snp, .SDcols = "plot_color"]
   data.table::setnames(lead_col_map, "plot_color", "plot_color_data")
   lead_tbl <- merge(lead_tbl, lead_col_map, by = "snp", all.x = TRUE, sort = FALSE)
   if (!("plot_color_data" %in% names(lead_tbl))) lead_tbl[, plot_color_data := NA_character_]
@@ -1621,7 +1623,7 @@ regional <- function(data,
     if (identical(lead_label_col_std, "snp")) {
       lead_tbl[(is.na(lead_label) | !nzchar(lead_label)) & !is.na(snp), lead_label := snp]
     } else {
-      map_lab <- dt[!is.na(snp) & nzchar(snp), .SD[1], by = snp, .SDcols = lead_label_col_std]
+      map_lab <- dt[!is.na(snp) & nzchar(snp) & snp %in% lead_tbl$snp, .SD[1], by = snp, .SDcols = lead_label_col_std]
       data.table::setnames(map_lab, lead_label_col_std, "lead_label_from_col")
       lead_tbl <- merge(lead_tbl, map_lab, by = "snp", all.x = TRUE, sort = FALSE)
       lead_tbl[(is.na(lead_label) | !nzchar(lead_label)) & !is.na(lead_label_from_col), lead_label := as.character(lead_label_from_col)]
@@ -1635,7 +1637,10 @@ regional <- function(data,
       if (lb %in% names(data)) {
         dt_raw <- if (data.table::is.data.table(data)) data else data.table::as.data.table(data)
         if (all(c(snp_col_use, lb) %in% names(dt_raw))) {
-          map_lb <- dt_raw[, .SD[1], by = snp_col_use, .SDcols = lb]
+          # Only lead-table SNPs survive the merge below; restrict the by-snp
+          # grouping to them (comparing on character keys, as the merge does)
+          # instead of grouping the full raw table.
+          map_lb <- dt_raw[as.character(dt_raw[[snp_col_use]]) %in% lead_tbl$snp, .SD[1], by = snp_col_use, .SDcols = lb]
           data.table::setnames(map_lb, c(snp_col_use, lb), c("snp", "lead_label_arg"))
           lead_tbl <- merge(lead_tbl, map_lb, by = "snp", all.x = TRUE, sort = FALSE)
           lead_tbl[!is.na(lead_label_arg), lead_label := as.character(lead_label_arg)]
@@ -1692,7 +1697,8 @@ regional <- function(data,
 .manhattan_resolve_lead_positions <- function(lead_tbl, dt) {
   require_pkg("data.table")
   if (!nrow(lead_tbl) || !nrow(dt)) return(lead_tbl)
-  lead_map <- dt[!is.na(snp) & nzchar(snp), .SD[which.max(yval)], by = snp, .SDcols = c("CHR", "POS")]
+  # Restrict to lead-table SNPs (only these survive the merge below).
+  lead_map <- dt[!is.na(snp) & nzchar(snp) & snp %in% lead_tbl$snp, .SD[which.max(yval)], by = snp, .SDcols = c("CHR", "POS")]
   data.table::setnames(lead_map, c("CHR", "POS"), c("CHR_data", "POS_data"))
   out <- merge(lead_tbl, lead_map, by = "snp", all.x = TRUE, sort = FALSE)
   out[is.na(CHR) & !is.na(CHR_data), CHR := CHR_data]
@@ -3158,13 +3164,26 @@ regional <- function(data,
   if (!is.finite(d) || is.na(d) || d < 1L) d <- 3L
   c0 <- as_num(cutoff)[1]
   if (!is.finite(c0) || is.na(c0) || c0 <= 0 || c0 >= 1) c0 <- 1e-3
-  p_num <- .gcanvas_p_to_num(p)[1]
-  if (!is.finite(p_num) || is.na(p_num)) return("NA")
+  # Work from log10(p) (underflow-safe via log10c) so extreme-small p-values such
+  # as "8.39e-3974" survive: as.numeric() would underflow them to 0 and yield "NA".
+  p0 <- as.character(p)[1]
+  lp <- suppressWarnings(log10c(p0)[1])
+  if (length(lp) != 1L || !is.finite(lp) || is.na(lp) || lp > 0) return("NA")
+  p_num <- suppressWarnings(as.numeric(p0))   # may underflow to 0 for tiny p
+
+  # Scientific notation below cutoff, or whenever the double underflowed: build
+  # mantissa/exponent from log10(p) rather than the (possibly 0) numeric value.
+  if (lp < log10(c0) || !is.finite(p_num) || is.na(p_num) || p_num <= 0) {
+    exp10 <- floor(lp)
+    mant <- if (is.finite(p_num) && p_num > 0) p_num / 10^exp10 else 10^(lp - exp10)
+    mant <- suppressWarnings(signif(mant, d))
+    if (is.finite(mant) && mant >= 10) { mant <- mant / 10; exp10 <- exp10 + 1L }
+    return(sprintf("%se%+03d", formatC(mant, format = "f", digits = max(0L, d - 1L)), as_int(exp10)))
+  }
+
+  # Normal range (p >= cutoff): the numeric value is representable.
   p_sig <- suppressWarnings(signif(p_num, d))
   if (!is.finite(p_sig) || is.na(p_sig) || p_sig <= 0) return("NA")
-  if (p_num < c0) {
-    return(formatC(p_sig, format = "e", digits = max(0L, d - 1L)))
-  }
   exp10 <- floor(log10(abs(p_sig)))
   dec <- max(0L, as_int(d - exp10 - 1L))
   formatC(p_sig, format = "f", digits = dec)

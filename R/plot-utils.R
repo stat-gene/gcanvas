@@ -77,21 +77,39 @@ get.legend <- function(x, which = c("auto", "first", "all"), drop.empty = TRUE, 
 # Split a ggplot into point layers vs non-point layers.
 # The two returned plots keep the same scales/coords/theme so saved images
 # with the same device size can be perfectly overlaid.
-#' Split long category labels onto multiple lines
+#' Split a plot into point-only and label-only layers
 #'
-#' Inserts newlines (or thin spaces) into label strings so that high-cardinality
-#' legends and axis labels fit within the available space.
+#' Splits a `ggplot` into two plots that share an identical layout: one holding
+#' only the point layers (the heavy scatter data, e.g. a full genome-wide cloud)
+#' and one holding the labels, axes, reference lines, and legend as lightweight
+#' vector graphics. Render the point plot as a raster and overlay the label plot
+#' as vector to keep text crisp while keeping the file small. Non-point
+#' decorations on the point plot are made transparent (not removed) so the two
+#' plots align exactly when overlaid at the same device size.
 #'
-#' This is a plain function (the dot in its name does not denote an S3
-#' method for [base::split()]).
+#' `gcanvas` performs no rasterisation itself; this function only separates the
+#' layers so you can rasterise the point plot with the tool of your choice (for
+#' example `ggrastr::rasterise()`, or by saving it to PNG) and then combine it
+#' with the vector label plot.
 #'
-#' @param x Character vector of labels.
-#' @param label.point Strategy: `"legend.only"`, `"thin"`, or `"keep"`.
-#' @param keep.n Maximum number of labels to keep visible.
+#' This is a plain function (the dot in its name does not denote an S3 method
+#' for [base::split()]).
 #'
-#' @return Character vector of (possibly split or thinned) labels.
-#' @rawNamespace export("split.label")
-split.label <- function(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L) {
+#' @usage split.plot_label(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L)
+#'
+#' @param x A `ggplot` object, for example the return value of [manhattan()].
+#' @param label.point How much of the point-layer data to keep in the label
+#'   plot: `"legend.only"` (default) retains only a minimal representative subset
+#'   needed to reproduce the legend and hides the points themselves; `"thin"`
+#'   retains up to `keep.n` representative points; `"keep"` retains all point
+#'   data.
+#' @param keep.n Maximum number of points to retain when `label.point = "thin"`.
+#'
+#' @return A list of two `ggplot` objects: `point` (point layers only, with
+#'   non-point decorations drawn transparent) and `label` (all layers, with the
+#'   point-layer data reduced according to `label.point`).
+#' @rawNamespace export("split.plot_label")
+split.plot_label <- function(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L) {
   require_pkg("ggplot2")
   require_pkg("data.table")
   require_pkg("rlang")
@@ -315,8 +333,8 @@ split.label <- function(x, label.point = c("legend.only", "thin", "keep"), keep.
 
   attr(p_point, "gcanvas_meta") <- attr(x, "gcanvas_meta")
   attr(p_label, "gcanvas_meta") <- attr(x, "gcanvas_meta")
-  attr(p_point, "split.label") <- "point"
-  attr(p_label, "split.label") <- "label"
+  attr(p_point, "split.plot_label") <- "point"
+  attr(p_label, "split.plot_label") <- "label"
 
   list(point = p_point, label = p_label)
 }

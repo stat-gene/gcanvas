@@ -103,7 +103,7 @@ liftover(df, from = 37, to = 38, liftover = "./liftOver")
 | Function | Purpose |
 |---|---|
 | `get.legend()` | Extract the legend grob from a `ggplot` |
-| `split.label()` | Wrap / thin long category labels so high-cardinality legends fit |
+| `split.plot_label()` | Split a plot into point-only + label-only layers (rasterise the points, keep labels vector) |
 
 ### PCA
 | Function | Purpose |
