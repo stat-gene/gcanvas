@@ -872,11 +872,17 @@ circos <- function(data,
 }
 
 .miami_minp <- function(p) {
-  pv <- .miami_layer_col(p, "P")
-  pv_num <- .gcanvas_p_to_num(pv)
-  pv_num <- pv_num[is.finite(pv_num) & !is.na(pv_num)]
-  if (!length(pv_num)) return("NA")
-  .gcanvas_format_minp(min(pv_num, na.rm = TRUE), digits = 3L, cutoff = 1e-3)
+  pv <- as.character(.miami_layer_col(p, "P"))
+  if (!length(pv)) return("NA")
+  # Find the minimum p-value in log10 space (underflow-safe via log10c) and
+  # format the original string, matching manhattan(); converting to numeric
+  # first would underflow extreme-small p-values to 0/NA and cap min-P near
+  # the denormal floor (~1e-324).
+  lp <- suppressWarnings(log10c(pv))
+  ok <- is.finite(lp) & !is.na(lp) & lp <= 0
+  if (!any(ok)) return("NA")
+  i <- which(ok)[which.min(lp[ok])]
+  .gcanvas_format_minp(pv[i], digits = 3L, cutoff = 1e-3)
 }
 
 .miami_maxy <- function(p) {
@@ -919,9 +925,9 @@ circos <- function(data,
   p
 }
 
-.miami_get_axis_info <- function(p, axis = c("x", "y")) {
+.miami_get_axis_info <- function(p, axis = c("x", "y"), built = NULL) {
   axis <- match.arg(axis)
-  b <- suppressWarnings(ggplot2::ggplot_build(p))
+  b <- built %||% suppressWarnings(ggplot2::ggplot_build(p))
   pp <- b$layout$panel_params[[1]]
   sc <- pp[[axis]]
   if (is.null(sc)) return(list(breaks = NULL, labels = NULL, minor_breaks = NULL, range = NULL))
@@ -938,8 +944,8 @@ circos <- function(data,
   list(breaks = breaks, labels = labels, minor_breaks = minor_breaks, range = rng)
 }
 
-.miami_point_ymax <- function(p) {
-  b <- suppressWarnings(ggplot2::ggplot_build(p))
+.miami_point_ymax <- function(p, built = NULL) {
+  b <- built %||% suppressWarnings(ggplot2::ggplot_build(p))
   vals <- numeric()
   for (i in seq_along(b$data)) {
     if (i > length(b$plot$layers)) next
@@ -1182,9 +1188,9 @@ circos <- function(data,
 
 .miami_extract_layers_built <- function(p, mode = c("top", "bottom"), axis_map, gap0,
                                                 y_max0, panel_height0, direction.reverse = FALSE,
-                                                drop.internal0 = TRUE) {
+                                                drop.internal0 = TRUE, built = NULL) {
   mode <- match.arg(mode)
-  b <- suppressWarnings(ggplot2::ggplot_build(p))
+  b <- built %||% suppressWarnings(ggplot2::ggplot_build(p))
   layers_out <- list()
   dfs_out <- list()
   for (i in seq_along(b$data)) {
@@ -1419,17 +1425,19 @@ circos <- function(data,
     }
   }
 
-  y1 <- .miami_get_axis_info(p1, "y")
-  y2 <- .miami_get_axis_info(p2, "y")
+  # Build each 1e6-point plot once and reuse; the miami helpers below otherwise
+  # call ggplot_build() again (3x per plot), which dominates miami() runtime.
   b1 <- suppressWarnings(ggplot2::ggplot_build(p1))
   b2 <- suppressWarnings(ggplot2::ggplot_build(p2))
+  y1 <- .miami_get_axis_info(p1, "y", built = b1)
+  y2 <- .miami_get_axis_info(p2, "y", built = b2)
   sc1 <- b1$layout$panel_params[[1]]$y
   sc2 <- b2$layout$panel_params[[1]]$y
 
   y1_max <- .miami_axis_max_from_range(b1$layout$panel_params[[1]]$y.range %||% y1$range)
   y2_max <- .miami_axis_max_from_range(b2$layout$panel_params[[1]]$y.range %||% y2$range)
-  if (!is.finite(y1_max) || is.na(y1_max)) y1_max <- .miami_point_ymax(p1)
-  if (!is.finite(y2_max) || is.na(y2_max)) y2_max <- .miami_point_ymax(p2)
+  if (!is.finite(y1_max) || is.na(y1_max)) y1_max <- .miami_point_ymax(p1, built = b1)
+  if (!is.finite(y2_max) || is.na(y2_max)) y2_max <- .miami_point_ymax(p2, built = b2)
   if (!is.finite(y1_max) || is.na(y1_max) || y1_max <= 0) y1_max <- 1
   if (!is.finite(y2_max) || is.na(y2_max) || y2_max <= 0) y2_max <- 1
 
@@ -1451,12 +1459,12 @@ circos <- function(data,
   top <- .miami_extract_layers_built(
     p1, mode = "top", axis_map = axis_map, gap0 = gap0,
     y_max0 = y1_max, panel_height0 = panel_height_top,
-    drop.internal0 = drop.internal, direction.reverse = direction.reverse
+    drop.internal0 = drop.internal, direction.reverse = direction.reverse, built = b1
   )
   bot <- .miami_extract_layers_built(
     p2, mode = "bottom", axis_map = axis_map, gap0 = gap0,
     y_max0 = y2_max, panel_height0 = panel_height_bottom,
-    drop.internal0 = drop.internal, direction.reverse = direction.reverse
+    drop.internal0 = drop.internal, direction.reverse = direction.reverse, built = b2
   )
 
   bl1 <- .miami_extract_breaks_labels(sc1, y1_max, y1$breaks, y1$labels)
@@ -1481,7 +1489,7 @@ circos <- function(data,
     x_pad <- max(1, x_max * 0.01)
     x_lim <- c(0, x_max + x_pad)
   } else {
-    x_info1 <- .miami_get_axis_info(p1, "x")
+    x_info1 <- .miami_get_axis_info(p1, "x", built = b1)
     x_lim <- x_info1$range
     if (is.null(x_lim) || length(x_lim) != 2 || !all(is.finite(x_lim))) x_lim <- c(0, 1)
     if (!is.finite(x_lim[2]) || is.na(x_lim[2]) || x_lim[2] <= 0) x_lim[2] <- 1
@@ -1556,7 +1564,11 @@ circos <- function(data,
 
 .miami_compose_plot <- function(p1, p2, meta1, meta2, ctx, show.legend,
                                         panel.box, x.text.size, y.text.size, tick.size) {
-  base <- unserialize(serialize(p1, NULL))
+  # Strip the heavy (~1e6-row) layers/data BEFORE deep-copying. Replacing these
+  # slots does not mutate p1, and .miami_remove_scales() then serialises only a
+  # lightweight skeleton instead of the full point cloud (the layers are discarded
+  # here anyway). Avoids ~15s of serialize/unserialize on large plots.
+  base <- p1
   base$layers <- list()
   base$data <- data.frame()
   base$mapping <- ggplot2::aes()

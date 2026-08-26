@@ -3175,7 +3175,9 @@ regional <- function(data,
   # mantissa/exponent from log10(p) rather than the (possibly 0) numeric value.
   if (lp < log10(c0) || !is.finite(p_num) || is.na(p_num) || p_num <= 0) {
     exp10 <- floor(lp)
-    mant <- if (is.finite(p_num) && p_num > 0) p_num / 10^exp10 else 10^(lp - exp10)
+    # mantissa in [1, 10) from log space; never divide by 10^exp10, which
+    # underflows to 0 near the denormal boundary (exp10 <= -324) -> Inf mantissa.
+    mant <- 10^(lp - exp10)
     mant <- suppressWarnings(signif(mant, d))
     if (is.finite(mant) && mant >= 10) { mant <- mant / 10; exp10 <- exp10 + 1L }
     return(sprintf("%se%+03d", formatC(mant, format = "f", digits = max(0L, d - 1L)), as_int(exp10)))
