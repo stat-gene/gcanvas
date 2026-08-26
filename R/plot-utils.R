@@ -104,8 +104,6 @@ get.legend <- function(x, which = c("auto", "first", "all"), drop.empty = TRUE, 
 #' [saveRDS()] pulls in `x`'s layer structure and is therefore large; save the
 #' rendered image (PNG/PDF) instead, which is unaffected.
 #'
-#' @usage split.plot_label(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L)
-#'
 #' @param x A `ggplot` object, for example the return value of [manhattan()].
 #' @param label.point How much of the point-layer data to keep in the label
 #'   plot: `"legend.only"` (default) retains only a minimal representative subset

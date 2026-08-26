@@ -4,7 +4,7 @@
 \alias{split.plot_label}
 \title{Split a plot into point-only and label-only layers}
 \usage{
-split.plot_label(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L)
+\method{split}{plot_label}(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L)
 }
 \arguments{
 \item{x}{A \code{ggplot} object, for example the return value of \code{\link[=manhattan]{manhattan()}}.}
@@ -20,7 +20,10 @@ data.}
 \value{
 A list of two \code{ggplot} objects: \code{point} (point layers only, with
 non-point decorations drawn transparent) and \code{label} (all layers, with the
-point-layer data reduced according to \code{label.point}).
+point-layer data reduced according to \code{label.point}, and panel/plot/legend
+backgrounds made transparent so it can be overlaid on the rasterised
+\code{point} plot). Save \code{label} with a transparent device background
+(e.g. \code{ggsave(..., bg = "transparent")}) when compositing.
 }
 \description{
 Splits a \code{ggplot} into two plots that share an identical layout: one holding
