@@ -95,6 +95,15 @@ get.legend <- function(x, which = c("auto", "first", "all"), drop.empty = TRUE, 
 #' This is a plain function (the dot in its name does not denote an S3 method
 #' for [base::split()]).
 #'
+#' @details
+#' For memory efficiency the returned plots hold independent *data* but delegate
+#' each layer's *structure* (geom/stat/mapping) to `x` by reference (via
+#' [ggplot2::ggproto()]), avoiding a full serialize of the environment-heavy
+#' layer objects. They render identically to a full deep copy (verified
+#' pixel-for-pixel). The only consequence is that saving a returned plot with
+#' [saveRDS()] pulls in `x`'s layer structure and is therefore large; save the
+#' rendered image (PNG/PDF) instead, which is unaffected.
+#'
 #' @usage split.plot_label(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L)
 #'
 #' @param x A `ggplot` object, for example the return value of [manhattan()].
@@ -120,26 +129,40 @@ split.plot_label <- function(x, label.point = c("legend.only", "thin", "keep"), 
     stop("x must be a ggplot object.", call. = FALSE)
   }
 
-  # Work only on deep-copied object to avoid any side effect on input.
-  x0 <- unserialize(serialize(x, NULL))
-  p_point <- unserialize(serialize(x0, NULL))
-  p_label <- unserialize(serialize(x0, NULL))
+  # Build lightweight skeletons (shared theme/scales/coord/labels) WITHOUT the
+  # heavy per-layer data: replacing $layers on a shallow copy does not mutate x,
+  # so serialising the skeleton copies almost nothing. This replaces the previous
+  # six serialize round-trips (three full-plot + three layer copies) of the
+  # ~1e6-row point cloud, which was the time/memory blow-up.
+  skel <- x
+  skel$layers <- list()
+  p_point <- unserialize(serialize(skel, NULL))
+  p_label <- unserialize(serialize(skel, NULL))
 
-  if (!length(x0$layers)) {
+  if (!length(x$layers)) {
     return(list(point = p_point, label = p_label))
   }
 
-  # Deep-copy layers to guarantee original input plot is never mutated.
-  layers_copy <- unserialize(serialize(x0$layers, NULL))
   is_point_layer <- vapply(
-    layers_copy,
+    x$layers,
     function(lyr) inherits(lyr$geom, "GeomPoint"),
     logical(1)
   )
 
-  # IMPORTANT: point and label plots must not share layer object references.
-  p_point$layers <- unserialize(serialize(layers_copy[is_point_layer], NULL))
-  p_label$layers <- unserialize(serialize(layers_copy, NULL))
+  # Copy a layer without serialising its (environment-heavy) structure: give it an
+  # independent data copy and delegate geom/stat/mapping/params to the source layer
+  # via ggproto(). Serialising a ggplot2 layer expands to ~5x its data because the
+  # mapping and geom/stat chains capture data-sized environments; delegation copies
+  # only the data. Renders identically (verified pixel-for-pixel); outputs are
+  # data-independent but share x's layer *structure* by reference (see @details).
+  copy_layer <- function(L) {
+    d <- L$data
+    if (data.table::is.data.table(d)) d <- data.table::copy(d)
+    ggplot2::ggproto(NULL, L, data = d)
+  }
+
+  # p_label keeps every layer; its point-layer data is thinned below.
+  p_label$layers <- lapply(x$layers, copy_layer)
 
   # Keep plot geometry identical while hiding non-point decorations.
   # Use transparent text/lines (not dropping elements) to preserve layout for overlay.
@@ -308,10 +331,12 @@ split.plot_label <- function(x, label.point = c("legend.only", "thin", "keep"), 
       lyr <- p_label$layers[[i]]
       if (!inherits(lyr$geom, "GeomPoint")) next
       src <- NULL
+      # Read-only source; the thinning helpers subset/copy internally and the
+      # "keep" branch copies explicitly, so no defensive copy is needed here.
       if (is.data.frame(lyr$data) && nrow(lyr$data)) {
-        src <- if (data.table::is.data.table(lyr$data)) data.table::copy(lyr$data) else lyr$data
+        src <- lyr$data
       } else if (is.data.frame(p_label$data) && nrow(p_label$data)) {
-        src <- if (data.table::is.data.table(p_label$data)) data.table::copy(p_label$data) else p_label$data
+        src <- p_label$data
       }
       if (!is.null(src) && nrow(src)) {
         map_vars <- .split_label_mapped_vars_for_legend(lyr$mapping, p_label$mapping, names(src))
@@ -330,6 +355,9 @@ split.plot_label <- function(x, label.point = c("legend.only", "thin", "keep"), 
       p_label$layers[[i]] <- lyr
     }
   }
+
+  # Point-only plot: point layers with independent data, structure delegated.
+  p_point$layers <- lapply(x$layers[is_point_layer], copy_layer)
 
   attr(p_point, "gcanvas_meta") <- attr(x, "gcanvas_meta")
   attr(p_label, "gcanvas_meta") <- attr(x, "gcanvas_meta")

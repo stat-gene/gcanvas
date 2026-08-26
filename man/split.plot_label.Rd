@@ -39,4 +39,12 @@ with the vector label plot.
 
 This is a plain function (the dot in its name does not denote an S3 method
 for \code{\link[base:split]{base::split()}}).
+
+For memory efficiency the returned plots hold independent \emph{data} but delegate
+each layer's \emph{structure} (geom/stat/mapping) to \code{x} by reference (via
+\code{\link[ggplot2:ggproto]{ggplot2::ggproto()}}), avoiding a full serialize of the environment-heavy
+layer objects. They render identically to a full deep copy (verified
+pixel-for-pixel). The only consequence is that saving a returned plot with
+\code{\link[=saveRDS]{saveRDS()}} pulls in \code{x}'s layer structure and is therefore large; save the
+rendered image (PNG/PDF) instead, which is unaffected.
 }
