@@ -289,7 +289,11 @@ manhattan <- function(data,
       hits <- win[q_dt, on = .(CHR, start <= POS, end >= POS), nomatch = 0L, allow.cartesian = TRUE]
       if (nrow(hits)) {
         hits[, dist := abs(start - lead_pos)]
-        data.table::setorder(hits, row_id, dist, lead_id)
+        # When a point falls in several lead flanks, the LAST lead in the table
+        # (largest lead_id) wins, matching the lead-point z-order where later leads
+        # are drawn on top; distance only breaks ties within the same lead. (Was
+        # nearest-lead-wins, which conflicted with the point ordering.)
+        data.table::setorder(hits, row_id, -lead_id, dist)
         hits <- hits[!duplicated(row_id)]
         if (length(lead_hit_rows)) hits <- hits[!(row_id %in% lead_hit_rows)]
         dt[hits$row_id, `:=`(plot_color = hits$flank_color, plot_alpha = lead.flank.alpha, flank_highlight = TRUE)]
