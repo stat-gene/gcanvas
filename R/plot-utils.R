@@ -116,7 +116,10 @@ get.legend <- function(x, which = c("auto", "first", "all"), drop.empty = TRUE, 
 #'
 #' @return A list of two `ggplot` objects: `point` (point layers only, with
 #'   non-point decorations drawn transparent) and `label` (all layers, with the
-#'   point-layer data reduced according to `label.point`).
+#'   point-layer data reduced according to `label.point`, and panel/plot/legend
+#'   backgrounds made transparent so it can be overlaid on the rasterised
+#'   `point` plot). Save `label` with a transparent device background
+#'   (e.g. `ggsave(..., bg = "transparent")`) when compositing.
 #' @rawNamespace export("split.plot_label")
 split.plot_label <- function(x, label.point = c("legend.only", "thin", "keep"), keep.n = 96L) {
   require_pkg("ggplot2")
@@ -163,6 +166,16 @@ split.plot_label <- function(x, label.point = c("legend.only", "thin", "keep"), 
 
   # p_label keeps every layer; its point-layer data is thinned below.
   p_label$layers <- lapply(x$layers, copy_layer)
+
+  # $label is meant to be overlaid on the (rasterised) $point plot, so make its
+  # panel/plot/legend backgrounds transparent; an opaque panel fill would hide the
+  # points underneath when the two are composited.
+  p_label <- p_label + ggplot2::theme(
+    panel.background      = ggplot2::element_rect(fill = NA, colour = NA),
+    plot.background       = ggplot2::element_rect(fill = NA, colour = NA),
+    legend.background     = ggplot2::element_rect(fill = NA, colour = NA),
+    legend.box.background = ggplot2::element_rect(fill = NA, colour = NA)
+  )
 
   # Keep plot geometry identical while hiding non-point decorations.
   # Use transparent text/lines (not dropping elements) to preserve layout for overlay.
