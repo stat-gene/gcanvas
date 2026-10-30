@@ -19,6 +19,8 @@ working with summary statistics.
 
 ## Install
 
+![Version](https://img.shields.io/badge/Version-0.1.1-blue) ![Last Updated](https://img.shields.io/badge/Last%20Updated-Oct%2030%202026-red)
+
 ```r
 # Latest from main
 remotes::install_github("stat-gene/gcanvas")
