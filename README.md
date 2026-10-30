@@ -13,7 +13,7 @@ reference projection and ancestry estimation, LD computation / clumping /
 proxy lookup, GTF-driven gene tracks, liftover, and a set of helpers for
 working with summary statistics.
 
-> **Status:** v0.1.0 — early release. The API is stable enough to use day to
+> **Status:** v0.1.1 — early release. The API is stable enough to use day to
 > day; `circos()` is experimental and being actively iterated. Detailed
 > documentation and vignettes will follow.
 
@@ -24,7 +24,7 @@ working with summary statistics.
 remotes::install_github("stat-gene/gcanvas")
 
 # Pin a tagged release
-remotes::install_github("stat-gene/gcanvas@v0.1.0")
+remotes::install_github("stat-gene/gcanvas@v0.1.1")
 ```
 
 Heavy R dependencies (`bigsnpr`, `Rsamtools`, `rcartocolor`, ...) are listed
