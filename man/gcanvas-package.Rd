@@ -11,9 +11,10 @@ Plotting functions include \code{\link[=manhattan]{manhattan()}}, \code{\link[=q
 \code{\link[=circos]{circos()}} (experimental), \code{\link[=hetmiss]{hetmiss()}}, and the helper \code{\link[=regional.track]{regional.track()}}.
 PCA workflows are provided by \code{\link[=pca]{pca()}}, \code{\link[=pca.projection]{pca.projection()}}, \code{\link[=pca.plot]{pca.plot()}},
 \code{\link[=pca.screeplot]{pca.screeplot()}}, \code{\link[=pca.refqc]{pca.refqc()}}, and \code{\link[=pca.ancestry]{pca.ancestry()}}. Genomic helpers
-include \code{\link[=liftover]{liftover()}}, \code{\link[=calcld]{calcld()}}, \code{\link[=ldproxy]{ldproxy()}}, \code{\link[=ldclump]{ldclump()}}, \code{\link[=is.novel]{is.novel()}},
-\code{\link[=get.lead]{get.lead()}}, \code{\link[=beta.align]{beta.align()}}, \code{\link[=maf.align]{maf.align()}}, \code{\link[=ld.align]{ld.align()}}, \code{\link[=plink.extract]{plink.extract()}},
-\code{\link[=get.pilot]{get.pilot()}}, and \code{\link[=geneinfo]{geneinfo()}}. General utilities cover color palettes
+include \code{\link[=liftover]{liftover()}} (with \code{\link[=chain.download]{chain.download()}}), \code{\link[=calcld]{calcld()}}, \code{\link[=ldproxy]{ldproxy()}},
+\code{\link[=ldclump]{ldclump()}}, \code{\link[=is.novel]{is.novel()}}, \code{\link[=get.lead]{get.lead()}}, \code{\link[=beta.align]{beta.align()}}, \code{\link[=maf.align]{maf.align()}},
+\code{\link[=ld.align]{ld.align()}}, \code{\link[=plink.extract]{plink.extract()}}, \code{\link[=get.pilot]{get.pilot()}}, and \code{\link[=geneinfo]{geneinfo()}}. General
+utilities cover color palettes
 (\code{\link[=get.colors]{get.colors()}}, \code{\link[=show.pal]{show.pal()}}), chromosome handling
 (\code{\link[=sort.chrom]{sort.chrom()}}, \code{\link[=rank.chrom]{rank.chrom()}}, \code{\link[=normalize.chrom]{normalize.chrom()}}), p-value handling
 (\code{\link[=pvalue]{pvalue()}}, \code{\link[=zabs]{zabs()}}, \code{\link[=quantvec]{quantvec()}}, \code{\link[=credibleset]{credibleset()}}, \code{\link[=invnorm]{invnorm()}}),

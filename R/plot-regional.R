@@ -263,7 +263,7 @@
   p
 }
 
-.regional_attach_meta <- function(p, df0, use_snp2, lead_snps, beta.col, direction.a1, label.mode, label.col, label.size, label.seed, label.top.n, label_df, ld_meta, ld_rds0, ld_bfile0, build, build.gwas, chrom, pos.range, pos.unit, gene_meta) {
+.regional_attach_meta <- function(p, df0, use_snp2, lead_snps, beta.col, direction.a1, label.mode, label.col, label.size, label.seed, label.top.n, label_df, ld_meta, ld_rds0, ld_bfile0, build, build.gwas, lift_meta, chrom, pos.range, pos.unit, gene_meta) {
   if (isTRUE(use_snp2)) {
     ld_r2 <- df0[, .(SNP = snp, CHR = CHR, POS = POS, r2 = suppressWarnings(as.numeric(ld)), r2_1 = suppressWarnings(as.numeric(ld1)), r2_2 = suppressWarnings(as.numeric(ld2)))]
   } else {
@@ -291,7 +291,7 @@
   ld_meta$ld_bfile <- if (!is.null(ld_bfile0) && nzchar(as.character(ld_bfile0)[1])) abs_path(ld_bfile0) else NA_character_
   ld_meta$ld_path <- if (identical(ld_meta$mode, "rds")) ld_meta$ld_rds else if (identical(ld_meta$mode, "bigsnpr")) ld_meta$ld_bfile else if (identical(ld_meta$mode, "matrix")) "ld.matrix" else NA_character_
   attr(p, "gcanvas_meta") <- list(
-    build = list(plot = build, gwas = build.gwas),
+    build = list(plot = build, gwas = build.gwas, liftover = lift_meta),
     region = list(
       chromosome = chrom,
       position = c(start = as.numeric(pos.range[1]), end = as.numeric(pos.range[2])),
@@ -342,9 +342,14 @@
 #'   Significance-line controls.
 #' @param plot.width,units Plot-size hints for label placement.
 #' @param build,build.gwas Genome build of the GTF (and of `data` if different).
-#' @param liftover,liftover.chain Liftover controls when builds differ:
-#'   `liftover` is the path to the `liftOver` executable (or `NULL` to use one
-#'   on `PATH`); chains are auto-resolved from the bundled files.
+#' @param liftover,liftover.chain,liftover.method Liftover controls when
+#'   `build.gwas` differs from `build`, passed to [liftover()] (`liftover` is
+#'   the `liftOver` executable, used only with `liftover.method = "binary"`).
+#'   The variants, the lead(s) and the `pos.range` ends are lifted in one call.
+#'   Variants not lifted to a single position on the same chromosome are not
+#'   drawn; a lead that cannot be lifted is dropped (no-lead mode), and a
+#'   window end that cannot be lifted is replaced by the range of the lifted
+#'   variants inside the window.
 #' @param ld.matrix,ld.rds,ld.bfile,ld.cache.dir,threads LD reference inputs.
 #' @param ld.color,snp.color,snp2.color Color scales for LD and points.
 #' @param shared.mode,shared.color,shared.cutoff,shared.alpha Shared-signal
@@ -388,6 +393,7 @@ regional <- function(data,
                      build.gwas = NULL,
                      liftover = NULL,
                      liftover.chain = NULL,
+                     liftover.method = c("auto", "chain", "binary"),
                      ld.matrix = NULL,
                      ld.rds = NULL,
                      ld.bfile = NULL,
@@ -781,27 +787,65 @@ regional <- function(data,
     pos.range <- c(min(pos.range), max(pos.range))
     build <- as_int(build)
     build.gwas <- as_int(build.gwas)
+    lift_meta <- NULL
     if (!is.na(build) && !is.na(build.gwas) && build != build.gwas) {
-      lift_bin_chk <- .gcanvas_resolve_liftover_bin(liftover)
-      if (is.na(lift_bin_chk)) {
-        stop("build and build.gwas differ, but the liftOver binary was not found. Set `liftover` to the liftOver executable path or put `liftOver` on PATH (download: https://hgdownload.soe.ucsc.edu/admin/exe/), or set build.gwas = build.", call. = FALSE)
+      # One liftover for the variants, the lead(s) and the window ends. Only a
+      # lift to one position on the same chromosome is kept (see ?liftover), so
+      # variants on other chromosomes can never enter the window.
+      df0 <- df0[CHR == chrom]
+      n0 <- nrow(df0)
+      lf <- liftover_positions(chrom, c(df0$POS, pos, pos2, pos.range), from = build.gwas, to = build,
+                               liftover = liftover, liftover.chain = liftover.chain, method = liftover.method)
+      ok <- lf$status == "ok"
+      i_var <- seq_len(n0)
+      i_end <- n0 + 3:4
+      st0 <- lf$status[i_var]
+      lift_meta <- list(from = build.gwas, to = build, n = n0,
+                        status = c(table(factor(st0, levels = .gcanvas_lift_status_levels))))
+      .gcanvas_note("gcanvas::regional", sprintf("Liftover GWAS: b%s -> b%s | chr%s n=%d | %s",
+                                                 build.gwas, build, chrom, n0, .gcanvas_lift_summary(st0)))
+      if (any(!ok[i_var])) {
+        .gcanvas_warn_msg(sprintf("Dropped %d variants not lifted to a single position on chr%s (%s).",
+                                  sum(!ok[i_var]), chrom, .gcanvas_lift_summary(st0[!ok[i_var]])))
       }
-      .gcanvas_note("gcanvas::regioanl", sprintf("Liftover GWAS: b%s -> b%s", build.gwas, build))
-      tmp <- data.frame(SNP = df0$snp, CHR = df0$CHR, POS = df0$POS, stringsAsFactors = FALSE)
-      tmp2 <- liftover(tmp, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain, snp.col = "SNP", chrom.col = "CHR", pos.col = "POS", silent = TRUE)
-      pos_new <- tmp2[[paste0("POS_b", build)]]
-      drop_n <- sum(is.na(pos_new), na.rm = TRUE)
-      if (drop_n) .gcanvas_warn_msg(sprintf("Dropped %d variants (liftover NA).", drop_n))
-      df0$POS <- pos_new
-      df0 <- df0[!is.na(POS)]
+      in_win <- df0$POS >= pos.range[1] & df0$POS <= pos.range[2]
+      width0 <- diff(pos.range)
+      df0$POS <- as.numeric(lf$pos[i_var])
+      win_pos <- df0$POS[in_win & ok[i_var]]
+      df0 <- df0[ok[i_var]]
       if (!nrow(df0)) stop("No variants left after liftover.", call. = FALSE)
-      if (has_lead) {
-        pos <- liftover_positions(chrom, pos, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain)
+      if (has_lead && !ok[n0 + 1L]) {
+        .gcanvas_warn_msg(sprintf("Lead SNP '%s' could not be lifted to b%s (%s); proceeding without highlighting a lead variant.",
+                                  snp, build, lf$status[n0 + 1L]))
+        has_lead <- FALSE
+        snp <- NA_character_
+        use_snp2 <- FALSE
       }
-      if (isTRUE(use_snp2)) pos2 <- liftover_positions(chrom, pos2, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain)
-      pos.range <- liftover_positions(chrom, pos.range, from = build.gwas, to = build, liftover = liftover, liftover.chain = liftover.chain)
-      if (any(is.na(pos.range)) || (has_lead && is.na(pos)) || (isTRUE(use_snp2) && is.na(pos2))) stop("Lead/pos.range liftover failed.", call. = FALSE)
-      pos.range <- c(min(pos.range), max(pos.range))
+      pos <- as.numeric(lf$pos[n0 + 1L])
+      if (isTRUE(use_snp2) && !ok[n0 + 2L]) {
+        .gcanvas_warn_msg(sprintf("Lead SNP2 '%s' could not be lifted to b%s (%s); ignoring snp2.", snp2, build, lf$status[n0 + 2L]))
+        use_snp2 <- FALSE
+      }
+      pos2 <- if (isTRUE(use_snp2)) as.numeric(lf$pos[n0 + 2L]) else NA_real_
+      ends <- as.numeric(lf$pos[i_end])
+      if (all(ok[i_end])) {
+        pos.range <- sort(ends)
+      } else {
+        # a window end without a trusted lift: span the lifted window variants instead
+        fill <- c(ends[ok[i_end]], win_pos, if (has_lead) pos, if (isTRUE(use_snp2)) pos2)
+        fill <- fill[is.finite(fill)]
+        if (!length(fill)) stop("pos.range could not be lifted, and no variant inside it was lifted.", call. = FALSE)
+        pos.range <- range(fill)
+        .gcanvas_warn_msg(sprintf("pos.range end(s) could not be lifted to b%s (%s); using the lifted variants' range %s-%s.",
+                                  build, paste(lf$status[i_end][!ok[i_end]], collapse = ", "),
+                                  format(pos.range[1], big.mark = ",", scientific = FALSE),
+                                  format(pos.range[2], big.mark = ",", scientific = FALSE)))
+      }
+      if (width0 > 0 && diff(pos.range) > 2 * width0) {
+        .gcanvas_warn_msg(sprintf("The lifted window (%s bp) is %.1fx the b%s window: the region is rearranged between builds.",
+                                  format(diff(pos.range), big.mark = ",", scientific = FALSE), diff(pos.range) / width0, build.gwas))
+      }
+      lift_meta$range <- pos.range
     }
     df0 <- df0[CHR == chrom & POS >= pos.range[1] & POS <= pos.range[2]]
     if (!nrow(df0)) stop("No variants in region after filtering.", call. = FALSE)
@@ -812,7 +856,7 @@ regional <- function(data,
         min_p_msg <- .gcanvas_format_minp(df0$P[min_idx], digits = 3L, cutoff = 1e-3)
       }
     }
-    .gcanvas_note("gcanvas::regioanl", sprintf("n_variants=%d | chromosome=%s | minP=%s", as_int(nrow(df0)), as.character(chrom)[1], min_p_msg))
+    .gcanvas_note("gcanvas::regional", sprintf("n_variants=%d | chromosome=%s | minP=%s", as_int(nrow(df0)), as.character(chrom)[1], min_p_msg))
     direction <- isTRUE(direction)
     if (direction) {
       if (is.null(beta.col) || !("beta" %in% names(df0))) stop("direction=TRUE requires beta.col.", call. = FALSE)
@@ -880,6 +924,7 @@ regional <- function(data,
       pos.range = pos.range,
       build = build,
       build.gwas = build.gwas,
+      lift_meta = lift_meta,
       y.min = y.min,
       y.max0 = y.max0,
       y.breaks_draw = y.breaks_obj$draw,
@@ -1025,7 +1070,7 @@ regional <- function(data,
       }
       cache_dir <- abs_path(cache_dir)
       dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
-      .gcanvas_note("gcanvas::regioanl", paste0("LD mode=plink (bigsnpr), cache: ", cache_dir))
+      .gcanvas_note("gcanvas::regional", paste0("LD mode=plink (bigsnpr), cache: ", cache_dir))
       ld_obj <- attach_ld_ref(bfile = ld_bfile0, ld_rds = NULL, cache_dir = cache_dir)
       ref_dt <- ref_bim_table(ld_obj)
       r2_res <- ld_r2_bigsnpr(ld_obj = ld_obj, ref_dt = ref_dt, chr = chrom, start = pos.range[1], end = pos.range[2], df_pos = df0$POS, lead_pos = pos, df_ea = NULL, df_nea = NULL, threads = as_int(threads))
@@ -1122,9 +1167,9 @@ regional <- function(data,
       cnt <- gene_meta$biotype_filtered_counts
       if (!is.null(cnt) && length(cnt)) {
         kv <- paste0(names(cnt), "=", as.integer(cnt))
-        .gcanvas_note("gcanvas::regioanl", sprintf("Biotype filtered genes: total=%d (%s)", as.integer(gene_meta$n_dropped_by_biotype_keep), paste(kv, collapse = ", ")))
+        .gcanvas_note("gcanvas::regional", sprintf("Biotype filtered genes: total=%d (%s)", as.integer(gene_meta$n_dropped_by_biotype_keep), paste(kv, collapse = ", ")))
       } else {
-        .gcanvas_note("gcanvas::regioanl", sprintf("Biotype filtered genes: total=%d", as.integer(gene_meta$n_dropped_by_biotype_keep)))
+        .gcanvas_note("gcanvas::regional", sprintf("Biotype filtered genes: total=%d", as.integer(gene_meta$n_dropped_by_biotype_keep)))
       }
     }
     list(tracks = tracks, gene_meta = gene_meta, hl_map = hl_map)
@@ -1295,7 +1340,7 @@ regional <- function(data,
     p = p, df0 = df0, use_snp2 = use_snp2, lead_snps = lead_snps, beta.col = beta.col, direction.a1 = direction.a1,
     label.mode = label.mode, label.col = label.col, label.size = label.size, label.seed = label.seed, label.top.n = label.top.n,
     label_df = label_df, ld_meta = ld_meta, ld_rds0 = ld_rds0, ld_bfile0 = ld_bfile0, build = build, build.gwas = build.gwas,
-    chrom = chrom, pos.range = pos.range, pos.unit = pos.unit, gene_meta = gene_meta
+    lift_meta = lift_meta, chrom = chrom, pos.range = pos.range, pos.unit = pos.unit, gene_meta = gene_meta
   )
   attr(p, "gcanvas_tracks") <- tracks
   p

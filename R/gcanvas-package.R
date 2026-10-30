@@ -5,9 +5,10 @@
 #' [circos()] (experimental), [hetmiss()], and the helper [regional.track()].
 #' PCA workflows are provided by [pca()], [pca.projection()], [pca.plot()],
 #' [pca.screeplot()], [pca.refqc()], and [pca.ancestry()]. Genomic helpers
-#' include [liftover()], [calcld()], [ldproxy()], [ldclump()], [is.novel()],
-#' [get.lead()], [beta.align()], [maf.align()], [ld.align()], [plink.extract()],
-#' [get.pilot()], and [geneinfo()]. General utilities cover color palettes
+#' include [liftover()] (with [chain.download()]), [calcld()], [ldproxy()],
+#' [ldclump()], [is.novel()], [get.lead()], [beta.align()], [maf.align()],
+#' [ld.align()], [plink.extract()], [get.pilot()], and [geneinfo()]. General
+#' utilities cover color palettes
 #' ([get.colors()], [show.pal()]), chromosome handling
 #' ([sort.chrom()], [rank.chrom()], [normalize.chrom()]), p-value handling
 #' ([pvalue()], [zabs()], [quantvec()], [credibleset()], [invnorm()]),

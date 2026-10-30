@@ -40,11 +40,13 @@ need for your workflow:
 | `plink2` | `pca`, `pca.projection`, `plink.extract`, `hetmiss` | `brew install plink2` | apt / conda / native binary | Native binary on `PATH` |
 | `plink` (1.9) | `plink.extract` (multi-input merge), `hetmiss` (`plink.version="plink"`) | `brew install plink` | apt / conda / native binary | Native binary on `PATH` |
 | `tabix` (htslib) | `gtf2rds`, `regional` (GTF mode), `geneinfo` (GTF mode) | `brew install htslib` | `apt install tabix` / conda | **WSL required** |
-| UCSC `liftOver` | `liftover` | UCSC binary | UCSC binary | **WSL required** |
+| UCSC `liftOver` (optional) | `liftover(method = "binary")` only | conda / UCSC binary | conda / UCSC binary | not available |
 
 The package itself loads on every OS (CI tests macOS / Linux / Windows). On
 Windows native, the LD / PCA / Manhattan / Q-Q / regional (LD-only) / circos
-paths work; GTF and liftover paths need WSL or a Linux/macOS shell.
+and liftover paths work; GTF paths need WSL or a Linux/macOS shell.
+`liftover()` reads chain files in R and needs no external program (see
+[Liftover](#liftover)).
 
 #### Downloading the binaries
 
@@ -56,35 +58,53 @@ path via the function's `plink` argument):
 - PLINK 2: <https://www.cog-genomics.org/plink/2.0/>
 - PLINK 1.9: <https://www.cog-genomics.org/plink/1.9/>
 
-**UCSC `liftOver`.** The chain files for the common build pairs
-(GRCh37 ⟷ GRCh38, hg18 → hg19) ship with the package, so `liftover()` finds them
-automatically. You only need the `liftOver` executable, which is **not**
-bundled. The recommended way to install it is via conda:
+### Liftover
 
-```sh
-conda install bioconda::ucsc-liftover
-```
-
-Alternatively, download the UCSC binary directly (Linux x86_64 example):
-
-```sh
-wget https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
-chmod +x ./liftOver
-```
-
-Binaries for other platforms are under
-<https://hgdownload.soe.ucsc.edu/admin/exe/>.
-
-When you don't pass the `liftover` argument, the executable is resolved
-automatically from your `PATH` and common install locations (including conda
-environments), so a conda-installed `liftOver` is picked up with no extra setup:
+`liftover()` reads the chain file directly in R: no `liftOver` binary, no
+WSL. The Ensembl GRCh37 ⟷ GRCh38 chains ship with the package and are picked
+by build pair:
 
 ```r
-# liftOver auto-resolved from PATH / conda env:
-liftover(df, from = 37, to = 38)
-# or point at the executable explicitly:
-liftover(df, from = 37, to = 38, liftover = "./liftOver")
+lifted <- liftover(sumstats, from = 37, to = 38)   # adds POS_b38, CHR_b38, STRAND_b38, lift_status
+lifted[lifted$lift_status == "ok", ]
 ```
+
+It attaches only positions it can trust:
+
+1. **One output row per input row**, in the same order, attached by row (never
+   by SNP id), so duplicated or missing ids cannot mix positions up.
+2. **Same chromosome only.** A position that moves to another chromosome, or
+   only to a patch / alt / unplaced contig (`HG*_PATCH`, `*_alt`, `GL*`, `KI*`,
+   ...), gets `NA`; a contig coordinate is never attached to the original
+   chromosome.
+3. **Several hits** (liftOver's "Duplicated in new"): identical hits merge;
+   exactly one hit on the same chromosome is used, none or several distinct
+   ones give `NA`.
+4. **Every row gets a `lift_status`** (`ok`, `unmapped`, `other_chrom`,
+   `contig`, `multiple`, `bad_input`), and the counts are summarized.
+
+`STRAND_b38 == "-"` means the base is reverse-complemented in the new build,
+so alleles must be complemented. `regional(..., build.gwas = 37, build = 38)`
+uses the same rules and draws only `ok` variants.
+
+hg18 → hg19 uses a UCSC chain. UCSC chain files are free for non-commercial use
+only, so it is not bundled; download it once (you are asked to accept the UCSC
+terms):
+
+```r
+chain.download(18, 19)
+liftover(df, from = 18, to = 19)
+```
+
+The UCSC `liftOver` binary is optional. `liftover(method = "binary")` runs
+`liftOver -multiple` and applies the same rules, which is useful as a
+cross-check (the results are identical). The binary is free for non-commercial
+use only (commercial use needs a UCSC license) and is not bundled; if you are
+eligible, install it yourself (`conda install bioconda::ucsc-liftover`, or
+<https://hgdownload.soe.ucsc.edu/admin/exe/>) and pass `liftover = "<path>"`,
+set `options(gcanvas.liftover = "<path>")` or the `GCANVAS_LIFTOVER`
+environment variable, or put it on `PATH`. See
+`inst/extdata/CHAIN_FILES_LICENSE.md` for the chain-file terms.
 
 ## What's inside
 
@@ -131,7 +151,8 @@ liftover(df, from = 37, to = 38, liftover = "./liftOver")
 ### Genomic analysis helpers
 | Function | Purpose |
 |---|---|
-| `liftover()` | Coordinate liftover via UCSC `liftOver` |
+| `liftover()` | Coordinate liftover between builds from chain files (same-chromosome hits only, per-row `lift_status`) |
+| `chain.download()` | Fetch the UCSC hg18 → hg19 chain (non-commercial terms) for `liftover()` |
 | `is.novel()` | Mark hits as novel vs. a reported set (with distance threshold) |
 | `get.lead()` | Greedy lead-variant detection over summary stats |
 | `beta.align()` | Align effect sizes to a reference allele |

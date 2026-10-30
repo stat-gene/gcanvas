@@ -1,6 +1,6 @@
 # Package-internal helpers: dependency checks, coercion, path normalization,
-# input parsing, seed handling, and the shared message sink used by all
-# verbose-progress callers (`.gcanvas_note`).
+# input parsing, seed handling, and the shared message sink (stderr, via
+# message()) used by all verbose-progress callers (`.gcanvas_note`).
 
 require_pkg <- function(pkgs) {
   miss <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -82,16 +82,15 @@ abs_path <- function(x) {
   "invalid -> NULL (session RNG state; not reset)"
 }
 
+# Progress text goes through message() (stderr), so suppressMessages() and
+# sink(type = "message") control it and stdout stays clean for results.
 .gcanvas_msg <- function(..., sep = "", appendLF = TRUE) {
-  cat(..., sep = sep)
-  if (isTRUE(appendLF)) cat("\n")
+  message(paste(unlist(lapply(list(...), as.character)), collapse = sep), appendLF = isTRUE(appendLF))
   invisible(NULL)
 }
 
 .gcanvas_warn_msg <- function(..., sep = "", appendLF = TRUE) {
-  cat("[WARN] ", ..., sep = sep)
-  if (isTRUE(appendLF)) cat("\n")
-  invisible(NULL)
+  .gcanvas_msg("[WARN] ", ..., sep = sep, appendLF = appendLF)
 }
 
 .gcanvas_note <- function(module = "gcanvas", msg = NULL, silent = FALSE) {

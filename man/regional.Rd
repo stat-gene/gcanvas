@@ -50,6 +50,7 @@ regional(
   build.gwas = NULL,
   liftover = NULL,
   liftover.chain = NULL,
+  liftover.method = c("auto", "chain", "binary"),
   ld.matrix = NULL,
   ld.rds = NULL,
   ld.bfile = NULL,
@@ -121,9 +122,14 @@ range and break-and-rescale controls.}
 
 \item{build, build.gwas}{Genome build of the GTF (and of \code{data} if different).}
 
-\item{liftover, liftover.chain}{Liftover controls when builds differ:
-\code{liftover} is the path to the \code{liftOver} executable (or \code{NULL} to use one
-on \code{PATH}); chains are auto-resolved from the bundled files.}
+\item{liftover, liftover.chain, liftover.method}{Liftover controls when
+\code{build.gwas} differs from \code{build}, passed to \code{\link[=liftover]{liftover()}} (\code{liftover} is
+the \code{liftOver} executable, used only with \code{liftover.method = "binary"}).
+The variants, the lead(s) and the \code{pos.range} ends are lifted in one call.
+Variants not lifted to a single position on the same chromosome are not
+drawn; a lead that cannot be lifted is dropped (no-lead mode), and a
+window end that cannot be lifted is replaced by the range of the lifted
+variants inside the window.}
 
 \item{ld.matrix, ld.rds, ld.bfile, ld.cache.dir, threads}{LD reference inputs.}
 

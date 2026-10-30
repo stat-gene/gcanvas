@@ -54,7 +54,7 @@ utils::globalVariables(c(
   "lead0", "leadSNP",
   "lead_col0", "lead_color_enabled", "lead_draw", "lead_id",
   "lead_label", "lead_label_col_std", "lead_pos", "lead_snp",
-  "level", "line_dt",
+  "level", "lift_meta", "line_dt",
   "locus", "locus_id", "locus_size",
   "markerID", "mid", "minP",
   "n", "n_causal_var", "n_indexSNP", "nea", "negLog10P",
@@ -126,5 +126,8 @@ utils::globalVariables(c(
   "glyph", "group_color",
   "hjust_drag",
   "label.input", "label.max", "label_color_arg",
-  "y_ceiling_plot"
+  "y_ceiling_plot",
+  # liftover() chain lookup (data.table non-equi join)
+  "i.p0", "i.row", "q0", "qName", "qSize", "qStd", "row", "tName",
+  "x.qName", "x.qSize", "x.qStart", "x.qStd", "x.qStrand", "x.tStart"
 ), package = "gcanvas")

@@ -2,7 +2,7 @@
 % Please edit documentation in R/liftover.R
 \name{liftover}
 \alias{liftover}
-\title{Lift coordinates between genome builds}
+\title{Lift variant coordinates between genome builds}
 \usage{
 liftover(
   df,
@@ -13,6 +13,8 @@ liftover(
   snp.col = "SNP",
   chrom.col = "CHR",
   pos.col = "POS",
+  method = c("auto", "chain", "binary"),
+  strict = FALSE,
   rm.tmp = TRUE,
   silent = FALSE
 )
@@ -20,55 +22,128 @@ liftover(
 \arguments{
 \item{df}{A \code{data.frame}/\code{data.table} of variants.}
 
-\item{from, to}{Source and destination genome builds. Accepts numeric or
-string aliases (see Description). Supported pairs: 37<->38 and 18->19.}
+\item{from, to}{Source and destination genome builds (see Description).}
 
-\item{liftover}{Optional path to the \code{liftOver} executable (a file path or a
-command name on \code{PATH}). When \code{NULL} (the default), \code{liftOver} is resolved
-automatically from the system \code{PATH} and common install locations
-(including conda environments).}
+\item{liftover}{Path to the \code{liftOver} executable (or a command name on
+\code{PATH}) for \code{method = "binary"}; ignored otherwise.}
 
 \item{liftover.chain}{Explicit chain file path, or \code{"auto"} (the default;
-\code{NULL} is treated the same) to resolve from the bundled chains.}
+\code{NULL} is treated the same) to choose one by build pair.}
 
-\item{snp.col, chrom.col, pos.col}{Column names in \code{df} for the SNP id,
-chromosome, and position.}
+\item{snp.col}{Ignored; kept for backward compatibility. Results are
+attached by row, so no SNP id column is needed.}
 
-\item{rm.tmp}{Logical. Remove temporary BED files when done.}
+\item{chrom.col, pos.col}{Column names in \code{df} for the chromosome and the
+1-based position.}
 
-\item{silent}{Logical. Suppress progress notes.}
+\item{method}{\code{"auto"} (the default) and \code{"chain"} read the chain file in R;
+\code{"binary"} runs UCSC \code{liftOver -multiple}.}
+
+\item{strict}{Logical. When the liftover cannot run at all, raise an error
+instead of a warning. Per-row failures never raise; they are reported in
+\code{lift_status}.}
+
+\item{rm.tmp}{Logical. With \code{method = "binary"}, remove the temporary BED
+files (under \code{\link[=tempdir]{tempdir()}}) when done.}
+
+\item{silent}{Logical. Suppress the summary note. Notes go to stderr via
+\code{\link[=message]{message()}}, so \code{\link[=suppressMessages]{suppressMessages()}} silences them as well.}
 }
 \value{
-A \code{data.table} with updated \code{CHR}/\code{POS} and (where applicable)
-columns indicating which variants failed to lift.
+\code{df} (a \code{data.table} if \code{df} was one, otherwise a \code{data.frame} with
+its row names) with these columns added or replaced, \verb{<to>} being the
+numeric build label (\code{38}, \code{37}):
+\describe{
+\item{\verb{<pos.col>_b<to>}}{integer new position; \code{NA} unless
+\code{lift_status} is \code{"ok"}.}
+\item{\verb{<chrom.col>_b<to>}}{the input chromosome, in its own notation,
+when \code{"ok"}; \code{NA} otherwise.}
+\item{\verb{STRAND_b<to>}}{\code{"+"} or \code{"-"} when \code{"ok"}. \code{"-"} means the base
+is reverse-complemented in the new build, so alleles must be
+complemented.}
+\item{\code{lift_status}}{see the list above.}
+}
 }
 \description{
-Wraps the UCSC \code{liftOver} binary to translate variant coordinates from one
-build to another. \code{from}/\code{to} accept \code{38}/\code{hg38}/\code{GRCh38}, \code{37}/\code{19}/\code{hg19}/
-\code{GRCh37}, and \code{36}/\code{18}/\code{hg18}/\code{NCBI36}.
+Translates each row's chromosome and position from build \code{from} to build
+\code{to}, and attaches the new position only when it can be trusted. By default
+the chain file is read directly in R, so no external program is needed and
+it works on every OS; \code{method = "binary"} runs the UCSC \code{liftOver}
+executable with \code{-multiple} instead and applies the same rules to its hits.
+\code{from}/\code{to} accept \code{38}/\code{hg38}/\code{GRCh38}, \code{37}/\code{19}/\code{hg19}/\code{GRCh37}, and
+\code{36}/\code{18}/\code{hg18}/\code{NCBI36}.
 }
-\details{
-When \code{liftover.chain = "auto"} (the default), the chain file is resolved
-automatically from the chain files bundled with the package
-(\verb{GRCh37<->GRCh38} from Ensembl and \code{hg18->hg19} from UCSC). The chromosome
-naming convention of the chosen chain (UCSC \code{chr1} vs Ensembl \code{1}) is
-detected from its header and the input coordinates are reformatted to match,
-so mixed-convention inputs lift correctly. For build pairs that are not
-bundled, pass an explicit chain file via \code{liftover.chain}.
+\section{Rules}{
 
-The \code{liftOver} binary itself is not bundled. When the \code{liftover} argument is
-\code{NULL}, the executable is resolved automatically by searching the system
-\code{PATH} (and common install locations, including conda environments), so a
-\code{liftOver} reachable from your shell is used without any extra configuration.
-The recommended way to install it is via conda:
-\preformatted{
-conda install bioconda::ucsc-liftover
+\enumerate{
+\item \strong{One output row per input row.} Row count and order are unchanged and
+results are attached by row, never by SNP id, so duplicated or missing
+ids cannot mix positions up.
+\item \strong{Same chromosome only.} A new position is kept only on the input's own
+chromosome. Names are compared after normalization (\code{chr} prefix;
+\code{23}/\code{24}/\code{26}/\code{M} for X/Y/MT; \code{25}/\code{XY}, the pseudo-autosomal region,
+is looked up on X). A position that lands on another chromosome, or only
+on a patch, alt or unplaced contig (\verb{HG*_PATCH}, \verb{CHR_*}, \verb{*_alt}, \verb{GL*},
+\verb{KI*}, \verb{chrUn_*}), is \code{NA}; a contig coordinate is never attached as a
+position on the original chromosome.
+\item \strong{Several hits} (what \code{liftOver} reports as "Duplicated in new"): every
+hit is examined. Hits at the same chromosome and position are merged;
+exactly one hit on the input's chromosome is used, none or two or more
+distinct ones give \code{NA}.
+\item \strong{Every row gets a status} (\code{lift_status}), and the counts per status
+are summarized at the end (unless \code{silent}).
 }
-Alternatively, download the UCSC binary directly (Linux x86_64 example):
-\preformatted{
-wget https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
-chmod +x ./liftOver
+
+\code{lift_status} is one of
+\describe{
+\item{\code{ok}}{lifted to a single position on the same chromosome.}
+\item{\code{unmapped}}{no aligned block covers the base (deleted in the new
+build, or the chromosome is not in the chain).}
+\item{\code{other_chrom}}{hits only on other standard chromosomes.}
+\item{\code{contig}}{hits only on patch, alt or unplaced contigs.}
+\item{\code{multiple}}{two or more distinct positions on the same chromosome.}
+\item{\code{bad_input}}{chromosome not 1-22/X/Y/MT, or position not a positive
+whole number.}
+\item{\code{failed}}{the liftover could not run at all (no chain file,
+unreadable chain, missing or failing binary); a warning is raised.}
 }
-Binaries for other platforms are under
-\url{https://hgdownload.soe.ucsc.edu/admin/exe/}.
+}
+
+\section{Chain files}{
+
+With \code{liftover.chain = "auto"} the chain is chosen by build pair. GRCh37
+<-> GRCh38 use the Ensembl assembly-mapping chains bundled with gcanvas
+(Ensembl places no restrictions on the use of its data). hg18 -> hg19 uses
+the UCSC chain, which is not bundled because UCSC allows its liftOver chain
+files for non-commercial use only; fetch it once with \code{\link[=chain.download]{chain.download()}}.
+Any other chain file can be given as a path. A chain is parsed once per
+session and cached. When \code{from} and \code{to} are the same build, positions are
+returned unchanged (status \code{ok}).
+}
+
+\section{liftOver binary}{
+
+Only \code{method = "binary"} uses the UCSC \code{liftOver} executable; it gives the
+same result as the default and is mainly a cross-check. It is not bundled:
+UCSC licenses it free for non-commercial use only (commercial use needs a
+UCSC license), and excludes it from the tools that may be redistributed via
+package managers. If you are eligible, \verb{conda install bioconda::ucsc-liftover}
+or a download from \url{https://hgdownload.soe.ucsc.edu/admin/exe/} works. It
+is found through the \code{liftover} argument, \code{options(gcanvas.liftover)}, the
+\code{GCANVAS_LIFTOVER} environment variable, \code{PATH}, and the \code{bin} directory
+of the active conda environment, in that order.
+}
+
+\examples{
+df <- data.frame(
+  SNP = c("rs1", "rs2", "rs3", "rs3"),
+  CHR = c(1, 1, 1, 1),
+  POS = c(1005000, 143185000, 50005000, 60005000)
+)
+# rs2 lands only on a GRCh37 patch contig, so it gets NA and "contig";
+# the two rs3 rows keep their own positions.
+liftover(df, from = 38, to = 37)
+}
+\seealso{
+\code{\link[=chain.download]{chain.download()}}
 }
