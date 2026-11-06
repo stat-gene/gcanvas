@@ -1,7 +1,7 @@
 Package: gcanvas
 Type: Package
 Title: Genomic Visualization and Analysis Toolkit
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: person(
     given = "Beomsu", family = "Kim",
     email = "bk.statg@gmail.com",
