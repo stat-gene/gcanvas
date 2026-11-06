@@ -82,7 +82,8 @@ It attaches only positions it can trust:
    exactly one hit on the same chromosome is used, none or several distinct
    ones give `NA`.
 4. **Every row gets a `lift_status`** (`ok`, `unmapped`, `other_chrom`,
-   `contig`, `multiple`, `bad_input`), and the counts are summarized.
+   `contig`, `multiple`, `not_reversible`, `bad_input`), and the counts are
+   summarized.
 
 `STRAND_b38 == "-"` means the base is reverse-complemented in the new build,
 so alleles must be complemented. `regional(..., build.gwas = 37, build = 38)`
@@ -93,10 +94,13 @@ order: one built from the NCBI Remap first-pass alignments, then the Ensembl
 assembly-mapping chain for rows the first left without a position on their
 chromosome. The Ensembl chain alone has no blocks for several regions (e.g.
 GRCh37 chr17:34-37 Mb, which holds *HNF1B*, and chr10:47.5-48.7 Mb): on the
-1.12M-SNP 1000 Genomes HapMap3 panel it leaves 1,431 SNPs unlifted, against 18
-for the two chains. The summary note shows the rows each chain lifted and points
-out rows still `unmapped`. To use one chain only, or a chain of your own, pass
-`liftover.chain` (paths are tried in order).
+1.12M-SNP 1000 Genomes HapMap3 panel it leaves 1,431 SNPs unlifted, against 20
+for the two chains. A row filled by the Ensembl chain must also lift back to
+where it came from, otherwise it gets `NA` (`not_reversible`: two places of the
+old build land on one base), so every `ok` row returns to its input position.
+The summary note shows the rows each chain lifted and points out rows still
+`unmapped`. To use one chain only, or a chain of your own, pass `liftover.chain`
+(paths are tried in order, without the lift-back check).
 
 hg18 → hg19 uses a UCSC chain. UCSC chain files are free for non-commercial use
 only, so it is not bundled; download it once (you are asked to accept the UCSC

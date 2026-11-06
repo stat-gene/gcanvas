@@ -99,6 +99,56 @@ test_that("later chains fill only rows without a position on their chromosome (t
   expect_warning(liftover(df, 38, 37, liftover.chain = c(chains[1], "no-such.chain"), silent = TRUE), "chain file not found")
 })
 
+test_that("rows filled by the Ensembl chain must lift back to where they came from", {
+  # rs2012404 and rs35525401: two GRCh37 copies land on one GRCh38 base
+  out <- lift_bundled(c("1", "7", "19"), c(13158801, 74402206, 40405436), from = 37, to = 38)
+  expect_identical(out$lift_status, c("not_reversible", "not_reversible", "ok"))
+  expect_identical(out$POS_b38, c(NA, NA, 39899069L))
+  expect_identical(out$STRAND_b38[1:2], c(NA_character_, NA_character_))
+  expect_identical(out$CHR_b38, c(NA, NA, "19"))
+  expect_message(liftover(data.frame(CHR = "1", POS = 13158801), 37, 38), "=0 \\+ .*=0\\): n=1 \\| not_reversible=1")
+  # the Ensembl chain alone has no such check
+  ens <- lift_bundled(c("1", "7"), c(13158801, 74402206), from = 37, to = 38, liftover.chain = ensembl_chain(37, 38))
+  expect_identical(ens$POS_b38, c(13091354L, 74988062L))
+})
+
+test_that("every `ok` row of `auto` returns to its input position", {
+  size <- c(248e6, 242e6, 198e6, 190e6, 180e6, 170e6, 159e6, 145e6, 138e6, 133e6, 133e6, 133e6,
+            114e6, 107e6, 101e6, 90e6, 81e6, 78e6, 58e6, 63e6, 46e6, 50e6, 155e6, 57e6)
+  chr <- c(1:22, "X", "Y")
+  d <- do.call(rbind, Map(function(c, n) data.frame(CHR = c, POS = seq(5000, n, by = 100000)), chr, size))
+  for (dir in list(c(37, 38), c(38, 37))) {
+    out <- liftover(d, dir[1], dir[2], silent = TRUE)
+    ok <- out$lift_status == "ok"
+    back <- liftover(data.frame(CHR = d$CHR[ok], POS = out[[paste0("POS_b", dir[2])]][ok]), dir[2], dir[1], silent = TRUE)
+    expect_identical(back[[paste0("POS_b", dir[1])]], as.integer(d$POS[ok]))
+  }
+})
+
+test_that("the lift-back check covers filled rows of `auto` only (toy chains)", {
+  dir <- tempfile("chains-")
+  dir.create(dir)
+  writeLines(c(hdr("1", 0, 100, "1", 1000, "+", 200, 300, 1), "100", ""), file.path(dir, "first"))
+  writeLines(c(hdr("2", 0, 100, "2", 1000, "+", 0, 100, 2), "100", "",
+               hdr("3", 0, 100, "3", 1000, "+", 0, 100, 3), "100", "",
+               hdr("4", 0, 100, "4", 1000, "+", 0, 100, 4), "100", ""), file.path(dir, "second"))
+  # chromosome 3 lands elsewhere on the way back and chromosome 4 is not there
+  writeLines(c(hdr("2", 0, 100, "2", 1000, "+", 0, 100, 1), "100", "",
+               hdr("3", 0, 100, "3", 1000, "+", 500, 600, 2), "100", ""), file.path(dir, "back"))
+  local_mocked_bindings(
+    .gcanvas_chain_dirs = function() dir,
+    .gcanvas_chain_candidates = function(from_key, to_key) if (from_key == "GRCh37") c("first", "second") else "back"
+  )
+  df <- data.frame(CHR = 1:4, POS = 10)
+  out <- liftover(df, 37, 38, silent = TRUE)
+  # chromosome 1 comes from the first chain: never checked, though "back" lacks it
+  expect_identical(out$lift_status, c("ok", "ok", "not_reversible", "not_reversible"))
+  expect_identical(out$POS_b38, c(210L, 10L, NA, NA))
+  expect_message(liftover(df, 37, 38), "first=1 \\+ second=1\\)")
+  expect_identical(liftover(df, 37, 38, liftover.chain = file.path(dir, c("first", "second")), silent = TRUE)$POS_b38,
+                   c(210L, 10L, 10L, 10L))
+})
+
 test_that("`auto` uses the bundled chains only, in order", {
   dir <- tempfile("chains-")
   dir.create(dir)

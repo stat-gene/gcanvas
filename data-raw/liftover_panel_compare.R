@@ -34,7 +34,7 @@ print(data.table(
   chains = c("Ensembl", "UCSC", "UCSC, then Ensembl", "auto (NCBI, then Ensembl)"),
   n = c(d[se != "ok", .N], d[su != "ok", .N], d[su != "ok" & se != "ok", .N], d[sa != "ok", .N])
 ))
-cat("\nauto status:\n")
+cat("\nauto status (not_reversible: filled by Ensembl, does not lift back):\n")
 print(table(d$sa))
 cat("\nauto vs UCSC, both lifted: same", d[sa == "ok" & su == "ok" & pa == pu, .N],
     "| different", d[sa == "ok" & su == "ok" & pa != pu, .N], "\n")

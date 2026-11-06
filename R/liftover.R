@@ -3,7 +3,8 @@
 # -multiple` instead. Both collect every hit of a position and pass them through
 # `.gcanvas_lift_resolve()`, so a new position is attached only when it lies on
 # the input's own chromosome at a single place, and every row gets a status.
-# Several chains are tried in order, each only on the rows still not lifted.
+# Several chains are tried in order, each only on the rows still not lifted, and
+# a row filled that way must lift back to where it came from.
 
 # Canonical assembly key for a build argument (accepts 38/hg38/GRCh38,
 # 37/19/hg19/GRCh37, 36/18/hg18/NCBI36). Returns NA for anything unknown.
@@ -331,12 +332,25 @@
   res
 }
 
+# Rows `filled` by a later chain must lift back to their input position `p`.
+# The first chain of a pair is one-to-one, the later ones are not: two places of
+# `from` can land on one base, and the row is then "not_reversible".
+.gcanvas_lift_check_back <- function(res, filled, chr, p, from, to, method, liftover, rm.tmp) {
+  rows <- which(filled)
+  if (!length(rows) || !length(.gcanvas_chain_candidates(.gcanvas_build_key(to), .gcanvas_build_key(from)))) return(res)
+  back <- .gcanvas_lift_core(chr[rows], res$pos[rows], from = to, to = from, method = method, liftover = liftover,
+                             rm.tmp = rm.tmp, check.back = FALSE)$result
+  off <- rows[back$status != "ok" | back$pos != p[rows]]
+  data.table::set(res, i = off, j = names(res), value = list(NA_integer_, NA_character_, "not_reversible"))
+  res
+}
+
 # Lift 1-based positions `pos` on chromosomes `chrom` from `from` to `to`.
 # Returns list(result = one row per input with pos/strand/status, chain = the
 # chains tried, lifted = rows each one lifted, method). Errors when the liftover
 # cannot run at all (no chain, no binary).
 .gcanvas_lift_core <- function(chrom, pos, from, to, method = "chain", liftover = NULL,
-                               liftover.chain = "auto", rm.tmp = TRUE) {
+                               liftover.chain = "auto", rm.tmp = TRUE, check.back = TRUE) {
   chr <- .gcanvas_lift_chr(chrom)
   p <- suppressWarnings(as.numeric(pos))
   bad <- is.na(chr) | !is.finite(p) | p < 1 | p > .Machine$integer.max | p != floor(p)
@@ -368,18 +382,22 @@
     hits_of <- function(x, chain) .gcanvas_lift_hits_binary(x, p0, chain, bin, rm.tmp = rm.tmp)
   }
   res <- NULL
-  lifted <- integer(length(chains))
+  used <- integer(length(chr))
   for (i in seq_along(chains)) {
     x <- chr
     if (i > 1L) x[!(res$status %in% .gcanvas_lift_open)] <- NA_character_
     part <- .gcanvas_lift_resolve(hits_of(x, chains[i]), chr, bad)
-    lifted[i] <- sum(part$status == "ok")
     res <- if (i == 1L) part else .gcanvas_lift_merge(res, part)
+    used[used == 0L & res$status == "ok"] <- i
   }
-  list(result = res, chain = chains, lifted = lifted, method = method)
+  if (isTRUE(check.back) && .gcanvas_chain_is_auto(liftover.chain)) {
+    res <- .gcanvas_lift_check_back(res, used > 1L, chr, p, from, to, method, liftover, rm.tmp)
+    used[res$status != "ok"] <- 0L
+  }
+  list(result = res, chain = chains, lifted = tabulate(used, nbins = length(chains)), method = method)
 }
 
-.gcanvas_lift_status_levels <- c("ok", "unmapped", "other_chrom", "contig", "multiple", "bad_input", "failed")
+.gcanvas_lift_status_levels <- c("ok", "unmapped", "other_chrom", "contig", "multiple", "not_reversible", "bad_input", "failed")
 
 # Build label for messages: the canonical key when known, else as given.
 .gcanvas_build_label <- function(b) {
@@ -439,6 +457,9 @@
 #'   \item{`other_chrom`}{hits only on other standard chromosomes.}
 #'   \item{`contig`}{hits only on patch, alt or unplaced contigs.}
 #'   \item{`multiple`}{two or more distinct positions on the same chromosome.}
+#'   \item{`not_reversible`}{a later chain gave a position (see Chain files),
+#'     but it does not lift back to the input position: two places of `from`
+#'     land on the same base, so the lift cannot be told apart from a paralog.}
 #'   \item{`bad_input`}{chromosome not 1-22/X/Y/MT, or position not a positive
 #'     whole number.}
 #'   \item{`failed`}{the liftover could not run at all (no chain file,
@@ -449,7 +470,9 @@
 #' With `liftover.chain = "auto"` the chains are chosen by build pair and tried
 #' in order, each only on rows the earlier ones left without a position on the
 #' input's chromosome (`unmapped`, `other_chrom`, `contig`). A lifted row keeps
-#' the first chain's position, and a `multiple` row stays `NA`.
+#' the first chain's position, and a `multiple` row stays `NA`. A row filled by
+#' a later chain must also lift back to its input position, or it is `NA`
+#' (`not_reversible`), so every `ok` row of `"auto"` returns where it came from.
 #'
 #' GRCh37 <-> GRCh38 use two bundled chains, both free of use restrictions: one
 #' built from the NCBI Remap first-pass alignments, then the Ensembl
@@ -479,8 +502,9 @@
 #' @param from,to Source and destination genome builds (see Description).
 #' @param liftover Path to the `liftOver` executable (or a command name on
 #'   `PATH`) for `method = "binary"`; ignored otherwise.
-#' @param liftover.chain Chain file path(s), tried in order, or `"auto"` (the
-#'   default; `NULL` is treated the same) to choose by build pair.
+#' @param liftover.chain Chain file path(s), tried in order without the lift-back
+#'   check, or `"auto"` (the default; `NULL` is treated the same) to choose by
+#'   build pair.
 #' @param snp.col Ignored; kept for backward compatibility. Results are
 #'   attached by row, so no SNP id column is needed.
 #' @param chrom.col,pos.col Column names in `df` for the chromosome and the

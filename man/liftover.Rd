@@ -27,8 +27,9 @@ liftover(
 \item{liftover}{Path to the \code{liftOver} executable (or a command name on
 \code{PATH}) for \code{method = "binary"}; ignored otherwise.}
 
-\item{liftover.chain}{Chain file path(s), tried in order, or \code{"auto"} (the
-default; \code{NULL} is treated the same) to choose by build pair.}
+\item{liftover.chain}{Chain file path(s), tried in order without the lift-back
+check, or \code{"auto"} (the default; \code{NULL} is treated the same) to choose by
+build pair.}
 
 \item{snp.col}{Ignored; kept for backward compatibility. Results are
 attached by row, so no SNP id column is needed.}
@@ -102,6 +103,9 @@ in the new build, or the chromosome is not in the chain).}
 \item{\code{other_chrom}}{hits only on other standard chromosomes.}
 \item{\code{contig}}{hits only on patch, alt or unplaced contigs.}
 \item{\code{multiple}}{two or more distinct positions on the same chromosome.}
+\item{\code{not_reversible}}{a later chain gave a position (see Chain files),
+but it does not lift back to the input position: two places of \code{from}
+land on the same base, so the lift cannot be told apart from a paralog.}
 \item{\code{bad_input}}{chromosome not 1-22/X/Y/MT, or position not a positive
 whole number.}
 \item{\code{failed}}{the liftover could not run at all (no chain file,
@@ -114,7 +118,9 @@ unreadable chain, missing or failing binary); a warning is raised.}
 With \code{liftover.chain = "auto"} the chains are chosen by build pair and tried
 in order, each only on rows the earlier ones left without a position on the
 input's chromosome (\code{unmapped}, \code{other_chrom}, \code{contig}). A lifted row keeps
-the first chain's position, and a \code{multiple} row stays \code{NA}.
+the first chain's position, and a \code{multiple} row stays \code{NA}. A row filled by
+a later chain must also lift back to its input position, or it is \code{NA}
+(\code{not_reversible}), so every \code{ok} row of \code{"auto"} returns where it came from.
 
 GRCh37 <-> GRCh38 use two bundled chains, both free of use restrictions: one
 built from the NCBI Remap first-pass alignments, then the Ensembl

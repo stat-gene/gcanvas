@@ -8,7 +8,8 @@
 #   hit is on another standard chromosome, else contig, or unmapped without
 #   hits); two or more distinct ones -> NA (multiple).
 #   `auto`: a row the NCBI chain gave no position on its chromosome takes the
-#   Ensembl chain's position; an unmapped row takes the Ensembl status.
+#   Ensembl chain's position; an unmapped row takes the Ensembl status. A row
+#   filled that way that does not lift back to its position is not_reversible.
 # Position sets: 100k random positions, every block boundary (+-1), a random
 # base in every reverse-strand block, the middle of every target gap, a 20 kb
 # grid, and (GRCh38 -> GRCh37) the regression cases and windows of
@@ -148,11 +149,18 @@ for (from in c("37", "38")) {
     ex_n <- expected(d$chr, d$pos, chains_of[[from]][["ncbi"]])
     ex_e <- expected(d$chr, d$pos, ens)
     e <- combine(ex_n$e, ex_e$e)
+    fill <- which(e$status == "ok" & ex_n$e$status != "ok")
+    if (length(fill)) {
+      back <- combine(expected(d$chr[fill], e$pos[fill], chains_of[[to]][["ncbi"]])$e,
+                      expected(d$chr[fill], e$pos[fill], chains_of[[to]][["ensembl"]])$e)
+      off <- fill[is.na(back$pos) | back$pos != d$pos[fill]]
+      e[off, `:=`(pos = NA_integer_, strand = NA_character_, status = "not_reversible")]
+    }
     in_df <- data.frame(CHR = d$chr, POS = d$pos)
     g_chain <- liftover(in_df, from = from, to = to, method = "chain", silent = TRUE)
     g_bin <- liftover(in_df, from = from, to = to, method = "binary", liftover = bin, silent = TRUE)
     g_ens <- liftover(in_df, from = from, to = to, method = "chain", liftover.chain = ens, silent = TRUE)
-    st <- table(factor(e$status, levels = c("ok", "unmapped", "other_chrom", "contig", "multiple")))
+    st <- table(factor(e$status, levels = c("ok", "unmapped", "other_chrom", "contig", "multiple", "not_reversible")))
     report[[length(report) + 1L]] <- data.table(
       direction = sprintf("%s->%s", from, to), set = nm, n = nrow(d),
       chain_vs_expected = compare(g_chain, e, to)[["mismatch"]],
@@ -160,7 +168,7 @@ for (from in c("37", "38")) {
       ensembl_vs_expected = compare(g_ens, ex_e$e, to)[["mismatch"]],
       rows_out_equal_in = nrow(g_chain) == nrow(d) && nrow(g_bin) == nrow(d),
       ok = st[["ok"]], unmapped = st[["unmapped"]], other_chrom = st[["other_chrom"]],
-      contig = st[["contig"]], multiple = st[["multiple"]],
+      contig = st[["contig"]], multiple = st[["multiple"]], not_reversible = st[["not_reversible"]],
       ncbi_multi_hit_rows = ex_n$n_multi_hit, strand_conflicts = ex_n$conflicts + ex_e$conflicts,
       minus_strand_ok = sum(g_chain[[paste0("STRAND_b", to)]] == "-", na.rm = TRUE)
     )

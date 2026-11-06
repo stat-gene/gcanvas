@@ -42,6 +42,19 @@ test_that("a region missing from the Ensembl chain keeps its variants", {
   expect_identical(m$ld_r2$POS[m$ld_r2$is_lead], 36098040)
 })
 
+test_that("a variant without a reversible lift is dropped and reported", {
+  d <- toy_region(1, 13.10e6, 13.20e6, 60)
+  d$POS[30] <- 13158801
+  d$P[20] <- 1e-9
+  suppressMessages(expect_message(
+    g <- regional(d, snp = d$SNP[20], pos.range = c(13.10e6, 13.20e6), build = 38, build.gwas = 37, show.gene = FALSE),
+    "not_reversible="
+  ))
+  m <- attr(g, "gcanvas_meta")
+  expect_gte(m$build$liftover$status[["not_reversible"]], 1L)
+  expect_false("v30" %in% m$ld_r2$SNP)
+})
+
 test_that("duplicated SNP ids keep their own lifted positions", {
   d <- toy_region(1, 0.95e6, 1.05e6, 50)
   d$SNP[c(10, 40)] <- "dup"
