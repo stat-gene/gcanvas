@@ -1,6 +1,6 @@
 # Expected values were measured with UCSC `liftOver -multiple` on the bundled
-# Ensembl chains (data-raw/liftover_validate.R, which also writes the window
-# fixture).
+# chains (data-raw/liftover_validate.R, which also writes the window fixture,
+# from the Ensembl chain alone).
 
 test_that("GRCh38 -> GRCh37 regression cases", {
   out <- lift_bundled("1", c(1005000, 143185000, 3925000, 50005000, 60005000))
@@ -15,13 +15,99 @@ test_that("GRCh38 -> GRCh37 windows: same-chromosome counts and positions", {
   fx <- utils::read.delim(test_path("fixtures", "liftover_b38_b37_windows.tsv"),
                           colClasses = c(window = "character", chr = "character", pos = "integer",
                                          pos_b37 = "integer", strand_b37 = "character", status = "character"))
-  out <- lift_bundled(fx$chr, fx$pos)
+  windows <- c("chr1:142.9-143.4Mb", "chr10:46.9-47.4Mb", "chr17:21.0-21.5Mb")
+  out <- lift_bundled(fx$chr, fx$pos, liftover.chain = ensembl_chain())
   expect_identical(out$POS_b37, fx$pos_b37)
   expect_identical(out$STRAND_b37, fx$strand_b37)
   expect_identical(out$lift_status, fx$status)
-  n_ok <- tapply(out$lift_status == "ok", fx$window, sum)
-  expect_identical(as.integer(n_ok[c("chr1:142.9-143.4Mb", "chr10:46.9-47.4Mb", "chr17:21.0-21.5Mb")]),
-                   c(1L, 175L, 500L))
+  expect_identical(as.integer(tapply(out$lift_status == "ok", fx$window, sum)[windows]), c(1L, 175L, 500L))
+
+  # chr10 is the region the Ensembl chain misplaces: all 500 lift with `auto`
+  auto <- lift_bundled(fx$chr, fx$pos)
+  expect_identical(as.integer(tapply(auto$lift_status == "ok", fx$window, sum)[windows]), c(1L, 500L, 500L))
+  chr10 <- fx$window == windows[2]
+  expect_identical(auto$POS_b37[chr10][c(1, 250, 500)], c(48838862L, 48589862L, 48339862L))
+  expect_true(all(auto$STRAND_b37[chr10] == "-"))
+})
+
+test_that("rs4430796 lifts in both directions", {
+  expect_identical(lift_bundled("17", 36098040, from = 37, to = 38)$POS_b38, 37738049L)
+  expect_identical(lift_bundled("17", 37738049, from = 38, to = 37)$POS_b37, 36098040L)
+  # what `auto` adds: the Ensembl chain has no block here
+  expect_identical(lift_bundled("17", 36098040, from = 37, to = 38, liftover.chain = ensembl_chain(37, 38))$lift_status, "unmapped")
+  expect_identical(lift_bundled("17", 37738049, from = 38, to = 37, liftover.chain = ensembl_chain(38, 37))$lift_status, "unmapped")
+})
+
+test_that("regions missing from the Ensembl chain lift in both directions", {
+  # first and last HapMap3 SNP of each region (positions agree with the UCSC chains)
+  d <- data.frame(
+    SNP = c("rs2301730", "rs584121", "rs11259779", "rs4929836", "rs8040193", "rs380804",
+            "rs9396386", "rs9396464", "rs2843562", "rs7350420"),
+    CHR = c(17, 17, 10, 10, 15, 15, 6, 6, 10, 10),
+    b37 = c(33998683L, 36997836L, 47543322L, 48695242L, 22755185L, 23296590L, 57580780L, 58075480L, 51496796L, 51594462L),
+    b38 = c(35671664L, 38841583L, 46172086L, 47044120L, 23117883L, 22576506L, 60613033L, 61107733L, 46099026L, 46001360L),
+    strand = c("+", "+", "+", "-", "-", "-", "+", "+", "-", "-")
+  )
+  up <- lift_bundled(d$CHR, d$b37, from = 37, to = 38)
+  expect_identical(up$POS_b38, d$b38)
+  expect_identical(up$STRAND_b38, d$strand)
+  down <- lift_bundled(d$CHR, d$b38, from = 38, to = 37)
+  expect_identical(down$POS_b37, d$b37)
+  expect_identical(down$STRAND_b37, d$strand)
+  expect_true(all(lift_bundled(d$CHR, d$b37, from = 37, to = 38, liftover.chain = ensembl_chain(37, 38))$lift_status != "ok"))
+})
+
+test_that("where the bundled chains disagree the NCBI position is kept", {
+  out <- lift_bundled(c("6", "17"), c(57338318, 21909270), from = 37, to = 38)
+  expect_identical(out$POS_b38, c(60366473L, 22409941L))
+  ens <- lift_bundled(c("6", "17"), c(57338318, 21909270), from = 37, to = 38, liftover.chain = ensembl_chain(37, 38))
+  expect_identical(ens$POS_b38, c(57473534L, 22382330L))
+})
+
+test_that("MT stays in rCRS coordinates (Ensembl chain, not in the NCBI alignments)", {
+  for (dir in list(c(37, 38), c(38, 37))) {
+    out <- lift_bundled(c("MT", "chrM", "26"), c(3200, 3200, 16000), from = dir[1], to = dir[2])
+    expect_identical(out[[paste0("POS_b", dir[2])]], c(3200L, 3200L, 16000L))
+    expect_identical(out$lift_status, rep("ok", 3))
+  }
+})
+
+test_that("the NCBI chains give a base one placement at most", {
+  for (dir in list(c(37, 38), c(38, 37))) {
+    path <- system.file("extdata", sprintf("GRCh%d_to_GRCh%d.ncbi.chain.gz", dir[1], dir[2]), package = "gcanvas")
+    b <- .gcanvas_chain_read(path)
+    expect_setequal(unique(b$tName), c(1:22, "X", "Y"))
+    b <- b[order(tName, tStart)]
+    expect_true(all(b$tStart[-1] >= b$tEnd[-nrow(b)] | b$tName[-1] != b$tName[-nrow(b)]))
+  }
+})
+
+test_that("later chains fill only rows without a position on their chromosome (toy chains)", {
+  chains <- c(toy_chain(), toy_chain_next())
+  df <- data.frame(CHR = c("1", "2", "3", "8", "7", "5", "9", "4"), POS = c(150, 150, 10, 10, 10, 10, 10, 10))
+  first <- liftover(df, 38, 37, liftover.chain = chains[1], silent = TRUE)
+  expect_identical(first$lift_status, c("ok", "unmapped", "other_chrom", "contig", "ok", "multiple", "unmapped", "unmapped"))
+
+  out <- liftover(df, 38, 37, liftover.chain = chains, silent = TRUE)
+  # 1 keeps the first chain's position; 2, 3, 8 are filled; 5 stays "multiple"
+  expect_identical(out$POS_b37, c(250L, 60L, 30L, 40L, 20L, NA, NA, NA))
+  expect_identical(out$lift_status, c("ok", "ok", "ok", "ok", "ok", "multiple", "contig", "unmapped"))
+  expect_identical(out$CHR_b37, c("1", "2", "3", "8", "7", NA, NA, NA))
+  expect_identical(nrow(out), nrow(df))
+
+  expect_message(liftover(df, 38, 37, liftover.chain = chains), "=2 \\+ .*=3\\): n=8")
+  expect_warning(liftover(df, 38, 37, liftover.chain = c(chains[1], "no-such.chain"), silent = TRUE), "chain file not found")
+})
+
+test_that("`auto` uses the bundled chains only, in order", {
+  dir <- tempfile("chains-")
+  dir.create(dir)
+  file.create(file.path(dir, c("hg19ToHg38.over.chain.gz", "hg38ToHg19.over.chain.gz")))
+  local_mocked_bindings(.gcanvas_chain_dirs = function() c(system.file("extdata", package = "gcanvas"), dir))
+  expect_identical(basename(.gcanvas_resolve_chains(37, 38, "auto")),
+                   c("GRCh37_to_GRCh38.ncbi.chain.gz", "GRCh37_to_GRCh38.chain.gz"))
+  expect_identical(basename(.gcanvas_resolve_chains(38, 37, NULL)),
+                   c("GRCh38_to_GRCh37.ncbi.chain.gz", "GRCh38_to_GRCh37.chain.gz"))
 })
 
 test_that("GRCh37 -> GRCh38 basics", {
@@ -124,9 +210,18 @@ test_that("bad positions are reported, not lifted", {
 test_that("rule 4: status column and summary note", {
   df <- data.frame(CHR = 1, POS = c(1005000, 143185000, 1e12))
   expect_message(liftover(df, from = 38, to = 37), "ok=1 \\| contig=1 \\| bad_input=1")
+  expect_message(liftover(df, from = 38, to = 37), "ncbi\\.chain\\.gz=1 \\+ GRCh38_to_GRCh37\\.chain\\.gz=0\\)")
   expect_silent(liftover(df, from = 38, to = 37, silent = TRUE))
   expect_silent(suppressMessages(liftover(df, from = 38, to = 37)))
   expect_output(suppressMessages(liftover(df, from = 38, to = 37)), NA)
+})
+
+test_that("unmapped rows are pointed out", {
+  gap <- data.frame(CHR = 1, POS = 3925000)
+  suppressMessages(expect_message(liftover(gap, from = 37, to = 38), "1 row\\(s\\) have no aligned block in the bundled chains"))
+  expect_silent(liftover(gap, from = 37, to = 38, silent = TRUE))
+  msgs <- testthat::capture_messages(liftover(data.frame(CHR = 1, POS = 1005000), from = 38, to = 37))
+  expect_length(msgs, 1L)
 })
 
 test_that("the same build is the identity", {

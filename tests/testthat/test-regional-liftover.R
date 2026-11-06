@@ -22,6 +22,26 @@ test_that("variants, lead and window are lifted without a liftOver binary", {
   expect_identical(m$build$liftover$status[["ok"]], 200L)
 })
 
+test_that("a region missing from the Ensembl chain keeps its variants", {
+  # GRCh37 chr17:35.9-36.3 Mb around rs4430796 (HNF1B)
+  d <- toy_region(17, 35.9e6, 36.3e6, 200)
+  d$POS[100] <- 36098040
+  d$SNP[100] <- "rs4430796"
+  d$P[100] <- 1e-12
+  g <- regional_quiet(d, snp = "rs4430796", pos.range = c(35.9e6, 36.3e6), build = 38, build.gwas = 37)
+  m <- attr(g, "gcanvas_meta")
+  expect_identical(m$build$liftover$status[["ok"]], 200L)
+  expect_identical(nrow(m$ld_r2), 200L)
+  expect_identical(m$ld_r2$POS[m$ld_r2$is_lead], 37738049)
+  # back from GRCh38 too
+  d38 <- toy_region(17, 37.6e6, 37.9e6, 100)
+  d38$POS[50] <- 37738049
+  d38$SNP[50] <- "rs4430796"
+  d38$P[50] <- 1e-12
+  m <- attr(regional_quiet(d38, snp = "rs4430796", build = 37, build.gwas = 38), "gcanvas_meta")
+  expect_identical(m$ld_r2$POS[m$ld_r2$is_lead], 36098040)
+})
+
 test_that("duplicated SNP ids keep their own lifted positions", {
   d <- toy_region(1, 0.95e6, 1.05e6, 50)
   d$SNP[c(10, 40)] <- "dup"

@@ -3,18 +3,42 @@
 The chain files in this directory are third-party data redistributed with
 gcanvas. They are **not** covered by the gcanvas package's MIT license; each
 keeps the terms of its source, listed below. `gcanvas::liftover()` reads them
-directly (`liftover.chain = "auto"`) to translate coordinates between genome
-builds; no external program is needed.
+directly (`liftover.chain = "auto"`, the NCBI chain first and then the Ensembl
+chain for the rows left) to translate coordinates between genome builds; no
+external program is needed.
 
 | File | Build mapping | Chromosome style | Source | Terms |
 |---|---|---|---|---|
+| `GRCh37_to_GRCh38.ncbi.chain.gz` | GRCh37 → GRCh38 (hg19 → hg38) | Plain (`1`, `X`; scaffolds by RefSeq accession) | NCBI Remap alignments | No restrictions on use |
+| `GRCh38_to_GRCh37.ncbi.chain.gz` | GRCh38 → GRCh37 (hg38 → hg19) | Plain (`1`, `X`; scaffolds by RefSeq accession) | NCBI Remap alignments | No restrictions on use |
 | `GRCh37_to_GRCh38.chain.gz` | GRCh37 → GRCh38 (hg19 → hg38) | Ensembl (`1`, `X`, `MT`; patches `HG*_PATCH`, `CHR_*`) | Ensembl assembly mapping | No restrictions on use |
 | `GRCh38_to_GRCh37.chain.gz` | GRCh38 → GRCh37 (hg38 → hg19) | Ensembl (`1`, `X`, `MT`; patches `HG*_PATCH`, `CHR_*`) | Ensembl assembly mapping | No restrictions on use |
 
+## NCBI (GRCh37 <-> GRCh38)
+
+Source: NCBI Remap assembly-assembly alignments between the GRCh37 and
+GRCh38.p14 primary assemblies
+(`https://ftp.ncbi.nlm.nih.gov/pub/remap/Homo_sapiens/3.0/`,
+`GCF_000001305.13-GCF_000001305.16.gff` and
+`GCF_000001305.16-GCF_000001305.13.gff`). `data-raw/ncbi_remap_chains.R` keeps
+the first-pass alignments (`reciprocity=3`) from standard chromosomes and writes
+them in chain format, with sequence names and lengths from the NCBI assembly
+reports. There is no MT in these alignments.
+
+NCBI's policies state that NCBI places no restrictions on the use or
+distribution of its molecular data, and that public-domain NLM material may be
+freely distributed and copied with appropriate acknowledgment requested
+(<https://www.ncbi.nlm.nih.gov/home/about/policies/>).
+
+> Source: National Center for Biotechnology Information, U.S. National Library
+> of Medicine.
+
 ## Ensembl (GRCh37 <-> GRCh38)
 
-Source: Ensembl assembly-mapping chain files
-(`https://ftp.ensembl.org/pub/assembly_mapping/homo_sapiens/`).
+Source: Ensembl assembly-mapping chain files, taken from
+`https://ftp.ensembl.org/pub/current_assembly_chain/homo_sapiens/`. Their blocks
+on standard chromosomes match those now in
+`https://ftp.ensembl.org/pub/assembly_mapping/homo_sapiens/`.
 
 Ensembl's disclaimer states that Ensembl places no restrictions on access to,
 or use of, the data it provides

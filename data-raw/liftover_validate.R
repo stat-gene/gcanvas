@@ -1,11 +1,14 @@
 # Cross-check of liftover() against UCSC `liftOver -multiple`, row by row, in
-# both directions (GRCh37 <-> GRCh38, the bundled Ensembl chains). The expected
-# values come from the raw `-multiple` output with the rules written out again
-# here, independently of the package code:
+# both directions (GRCh37 <-> GRCh38), for `auto` (NCBI chain, then Ensembl
+# chain) and for the Ensembl chain alone. The expected values come from the raw
+# `-multiple` output with the rules written out again here, independently of
+# the package code:
 #   hits at the same (chromosome, position, strand) merge; exactly one hit on
 #   the input's own chromosome -> that position; none -> NA (other_chrom when a
 #   hit is on another standard chromosome, else contig, or unmapped without
 #   hits); two or more distinct ones -> NA (multiple).
+#   `auto`: a row the NCBI chain gave no position on its chromosome takes the
+#   Ensembl chain's position; an unmapped row takes the Ensembl status.
 # Position sets: 100k random positions, every block boundary (+-1), a random
 # base in every reverse-strand block, the middle of every target gap, a 20 kb
 # grid, and (GRCh38 -> GRCh37) the regression cases and windows of
@@ -33,8 +36,12 @@ len <- list(
            138394717, 133797422, 135086622, 133275309, 114364328, 107043718, 101991189, 90338345,
            83257441, 80373285, 58617616, 64444167, 46709983, 50818468, 156040895, 57227415, 16569)
 )
-chain_of <- c("37" = system.file("extdata", "GRCh37_to_GRCh38.chain.gz", package = "gcanvas"),
-              "38" = system.file("extdata", "GRCh38_to_GRCh37.chain.gz", package = "gcanvas"))
+chains_of <- list(
+  "37" = c(ncbi = system.file("extdata", "GRCh37_to_GRCh38.ncbi.chain.gz", package = "gcanvas"),
+           ensembl = system.file("extdata", "GRCh37_to_GRCh38.chain.gz", package = "gcanvas")),
+  "38" = c(ncbi = system.file("extdata", "GRCh38_to_GRCh37.ncbi.chain.gz", package = "gcanvas"),
+           ensembl = system.file("extdata", "GRCh38_to_GRCh37.chain.gz", package = "gcanvas"))
+)
 
 # Target blocks of the chains on standard chromosomes, parsed chain by chain.
 read_blocks <- function(path) {
@@ -64,7 +71,7 @@ windows <- data.table(
 )
 
 position_sets <- function(from) {
-  b <- read_blocks(chain_of[[from]])
+  b <- rbindlist(lapply(chains_of[[from]], read_blocks))
   L <- len[[from]]
   i <- sample.int(25L, 1e5, replace = TRUE, prob = L)
   out <- list(
@@ -110,6 +117,15 @@ expected <- function(chr, pos, chain) {
   list(e = e, conflicts = conflicts, n_multi_hit = h[, .N, by = row][N > 1L, .N])
 }
 
+# `auto` from the expected rows of the NCBI (a) and Ensembl (b) chains.
+combine <- function(a, b) {
+  open <- a$status %in% c("unmapped", "other_chrom", "contig")
+  use <- (open & b$status == "ok") | (a$status == "unmapped" & b$status != "unmapped")
+  out <- copy(a)
+  out[use, `:=`(pos = b$pos[use], strand = b$strand[use], status = b$status[use])]
+  out[]
+}
+
 neq <- function(a, b) !((is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b))
 
 compare <- function(got, e, to) {
@@ -124,29 +140,33 @@ compare <- function(got, e, to) {
 report <- list()
 for (from in c("37", "38")) {
   to <- if (from == "37") "38" else "37"
-  chain <- chain_of[[from]]
+  ens <- chains_of[[from]][["ensembl"]]
   sets <- position_sets(from)
   for (nm in names(sets)) {
     d <- sets[[nm]]
     d[, pos := as.integer(pos)]
-    ex <- expected(d$chr, d$pos, chain)
+    ex_n <- expected(d$chr, d$pos, chains_of[[from]][["ncbi"]])
+    ex_e <- expected(d$chr, d$pos, ens)
+    e <- combine(ex_n$e, ex_e$e)
     in_df <- data.frame(CHR = d$chr, POS = d$pos)
     g_chain <- liftover(in_df, from = from, to = to, method = "chain", silent = TRUE)
     g_bin <- liftover(in_df, from = from, to = to, method = "binary", liftover = bin, silent = TRUE)
-    st <- table(factor(ex$e$status, levels = c("ok", "unmapped", "other_chrom", "contig", "multiple")))
+    g_ens <- liftover(in_df, from = from, to = to, method = "chain", liftover.chain = ens, silent = TRUE)
+    st <- table(factor(e$status, levels = c("ok", "unmapped", "other_chrom", "contig", "multiple")))
     report[[length(report) + 1L]] <- data.table(
       direction = sprintf("%s->%s", from, to), set = nm, n = nrow(d),
-      chain_vs_expected = compare(g_chain, ex$e, to)[["mismatch"]],
-      binary_vs_expected = compare(g_bin, ex$e, to)[["mismatch"]],
+      chain_vs_expected = compare(g_chain, e, to)[["mismatch"]],
+      binary_vs_expected = compare(g_bin, e, to)[["mismatch"]],
+      ensembl_vs_expected = compare(g_ens, ex_e$e, to)[["mismatch"]],
       rows_out_equal_in = nrow(g_chain) == nrow(d) && nrow(g_bin) == nrow(d),
       ok = st[["ok"]], unmapped = st[["unmapped"]], other_chrom = st[["other_chrom"]],
       contig = st[["contig"]], multiple = st[["multiple"]],
-      multi_hit_rows = ex$n_multi_hit, strand_conflicts = ex$conflicts,
+      ncbi_multi_hit_rows = ex_n$n_multi_hit, strand_conflicts = ex_n$conflicts + ex_e$conflicts,
       minus_strand_ok = sum(g_chain[[paste0("STRAND_b", to)]] == "-", na.rm = TRUE)
     )
     if (from == "38" && nm == "windows") {
-      fx <- cbind(windows[, .(window, chr, pos)], pos_b37 = g_chain$POS_b37, strand_b37 = g_chain$STRAND_b37,
-                  status = g_chain$lift_status)
+      fx <- cbind(windows[, .(window, chr, pos)], pos_b37 = g_ens$POS_b37, strand_b37 = g_ens$STRAND_b37,
+                  status = g_ens$lift_status)
       dir.create("tests/testthat/fixtures", recursive = TRUE, showWarnings = FALSE)
       fwrite(fx, "tests/testthat/fixtures/liftover_b38_b37_windows.tsv", sep = "\t", na = "NA", quote = FALSE)
     }
@@ -155,12 +175,13 @@ for (from in c("37", "38")) {
 report <- rbindlist(report)
 print(report, nrows = 100)
 
-# The 20 kb grid in liftOver's default (single) mode, as in the original measurement.
+# The 20 kb grid in liftOver's default (single) mode on the Ensembl chain, as in
+# the original measurement.
 single_mode <- function(from) {
   f <- tempfile(c("in", "out", "un"), fileext = ".bed")
   on.exit(unlink(f))
   fwrite(grid[, .(chr, as.integer(pos) - 1L, as.integer(pos), .I)], f[1], sep = "\t", col.names = FALSE)
-  system2(bin, c(f[1], chain_of[[from]], f[2], f[3]), stdout = FALSE, stderr = FALSE)
+  system2(bin, c(f[1], chains_of[[from]][["ensembl"]], f[2], f[3]), stdout = FALSE, stderr = FALSE)
   out <- fread(f[2], header = FALSE, sep = "\t", colClasses = "character")
   un <- readLines(f[3])
   data.table(direction = from, lifted = nrow(out), lifted_to_contig = sum(!(out$V1 %in% std)),
@@ -171,7 +192,7 @@ cat("\n20 kb grid, liftOver single mode:\n")
 print(rbind(single_mode("37"), single_mode("38")))
 
 w <- fread("tests/testthat/fixtures/liftover_b38_b37_windows.tsv")
-cat("\nGRCh38 -> GRCh37 windows, rows lifted to the same chromosome:\n")
+cat("\nGRCh38 -> GRCh37 windows on the Ensembl chain, rows lifted to the same chromosome:\n")
 print(w[, .(n = .N, ok = sum(status == "ok")), by = window])
 
 # Timing: chain (cold = parse + lookup, warm = cached chain) vs binary.

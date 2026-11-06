@@ -27,8 +27,8 @@ liftover(
 \item{liftover}{Path to the \code{liftOver} executable (or a command name on
 \code{PATH}) for \code{method = "binary"}; ignored otherwise.}
 
-\item{liftover.chain}{Explicit chain file path, or \code{"auto"} (the default;
-\code{NULL} is treated the same) to choose one by build pair.}
+\item{liftover.chain}{Chain file path(s), tried in order, or \code{"auto"} (the
+default; \code{NULL} is treated the same) to choose by build pair.}
 
 \item{snp.col}{Ignored; kept for backward compatibility. Results are
 attached by row, so no SNP id column is needed.}
@@ -36,7 +36,7 @@ attached by row, so no SNP id column is needed.}
 \item{chrom.col, pos.col}{Column names in \code{df} for the chromosome and the
 1-based position.}
 
-\item{method}{\code{"auto"} (the default) and \code{"chain"} read the chain file in R;
+\item{method}{\code{"auto"} (the default) and \code{"chain"} read the chain files in R;
 \code{"binary"} runs UCSC \code{liftOver -multiple}.}
 
 \item{strict}{Logical. When the liftover cannot run at all, raise an error
@@ -67,7 +67,7 @@ complemented.}
 \description{
 Translates each row's chromosome and position from build \code{from} to build
 \code{to}, and attaches the new position only when it can be trusted. By default
-the chain file is read directly in R, so no external program is needed and
+the chain files are read directly in R, so no external program is needed and
 it works on every OS; \code{method = "binary"} runs the UCSC \code{liftOver}
 executable with \code{-multiple} instead and applies the same rules to its hits.
 \code{from}/\code{to} accept \code{38}/\code{hg38}/\code{GRCh38}, \code{37}/\code{19}/\code{hg19}/\code{GRCh37}, and
@@ -97,8 +97,8 @@ are summarized at the end (unless \code{silent}).
 \code{lift_status} is one of
 \describe{
 \item{\code{ok}}{lifted to a single position on the same chromosome.}
-\item{\code{unmapped}}{no aligned block covers the base (deleted in the new
-build, or the chromosome is not in the chain).}
+\item{\code{unmapped}}{no aligned block covers the base in any chain (deleted
+in the new build, or the chromosome is not in the chain).}
 \item{\code{other_chrom}}{hits only on other standard chromosomes.}
 \item{\code{contig}}{hits only on patch, alt or unplaced contigs.}
 \item{\code{multiple}}{two or more distinct positions on the same chromosome.}
@@ -111,14 +111,23 @@ unreadable chain, missing or failing binary); a warning is raised.}
 
 \section{Chain files}{
 
-With \code{liftover.chain = "auto"} the chain is chosen by build pair. GRCh37
-<-> GRCh38 use the Ensembl assembly-mapping chains bundled with gcanvas
-(Ensembl places no restrictions on the use of its data). hg18 -> hg19 uses
-the UCSC chain, which is not bundled because UCSC allows its liftOver chain
-files for non-commercial use only; fetch it once with \code{\link[=chain.download]{chain.download()}}.
-Any other chain file can be given as a path. A chain is parsed once per
-session and cached. When \code{from} and \code{to} are the same build, positions are
-returned unchanged (status \code{ok}).
+With \code{liftover.chain = "auto"} the chains are chosen by build pair and tried
+in order, each only on rows the earlier ones left without a position on the
+input's chromosome (\code{unmapped}, \code{other_chrom}, \code{contig}). A lifted row keeps
+the first chain's position, and a \code{multiple} row stays \code{NA}.
+
+GRCh37 <-> GRCh38 use two bundled chains, both free of use restrictions: one
+built from the NCBI Remap first-pass alignments, then the Ensembl
+assembly-mapping chain. The Ensembl chain alone has no blocks for several
+regions (e.g. GRCh37 chr17:34-37 Mb, chr10:47.5-48.7 Mb) and is what lifts
+MT, which the NCBI alignments leave out; MT is kept in rCRS coordinates.
+
+hg18 -> hg19 uses the UCSC chain, which is not bundled because UCSC allows
+its liftOver chain files for non-commercial use only; fetch it once with
+\code{\link[=chain.download]{chain.download()}}. Any chain file can be given as a path instead, and UCSC
+chains read fine that way, but mind that UCSC hg19 \code{chrM} is not GRCh37 \code{MT}
+(rCRS). A chain is parsed once per session and cached. When \code{from} and \code{to}
+are the same build, positions are returned unchanged (status \code{ok}).
 }
 
 \section{liftOver binary}{

@@ -1,8 +1,9 @@
 # Coordinate liftover between genome builds. The default path reads the chain
-# file in R (no external binary); `method = "binary"` runs UCSC `liftOver
+# files in R (no external binary); `method = "binary"` runs UCSC `liftOver
 # -multiple` instead. Both collect every hit of a position and pass them through
 # `.gcanvas_lift_resolve()`, so a new position is attached only when it lies on
 # the input's own chromosome at a single place, and every row gets a status.
+# Several chains are tried in order, each only on the rows still not lifted.
 
 # Canonical assembly key for a build argument (accepts 38/hg38/GRCh38,
 # 37/19/hg19/GRCh37, 36/18/hg18/NCBI36). Returns NA for anything unknown.
@@ -21,12 +22,14 @@
   switch(k, GRCh38 = "38", GRCh37 = "37", hg18 = "18", NA_character_)
 }
 
-# Candidate chain basenames for a (from -> to) build pair, in preference order.
+# Candidate chain basenames for a (from -> to) build pair, in the order they
+# are tried. The NCBI chains cover the regions missing from the Ensembl ones
+# (e.g. chr17:34-37 Mb of GRCh37) and the Ensembl chains add MT and a few bases.
 .gcanvas_chain_candidates <- function(from_key, to_key) {
   pair <- paste(from_key, to_key, sep = "=>")
   switch(pair,
-    "GRCh37=>GRCh38" = c("GRCh37_to_GRCh38.chain.gz", "hg19ToHg38.over.chain.gz"),
-    "GRCh38=>GRCh37" = c("GRCh38_to_GRCh37.chain.gz", "hg38ToHg19.over.chain.gz"),
+    "GRCh37=>GRCh38" = c("GRCh37_to_GRCh38.ncbi.chain.gz", "GRCh37_to_GRCh38.chain.gz"),
+    "GRCh38=>GRCh37" = c("GRCh38_to_GRCh37.ncbi.chain.gz", "GRCh38_to_GRCh37.chain.gz"),
     "hg18=>GRCh37"   = c("hg18ToHg19.over.chain.gz", "NCBI36_to_GRCh37.chain.gz"),
     character()
   )
@@ -56,14 +59,16 @@
     is.na(chain0) || !nzchar(chain0) || toupper(chain0) == "AUTO"
 }
 
-# Resolve a chain file path: an explicit `liftover.chain` must exist; "auto"
-# picks the first candidate for the build pair found in the chain dirs. Errors
-# (with what to do next) when nothing is found.
-.gcanvas_resolve_chain <- function(from, to, liftover.chain) {
+# Chain file paths for a lift, in the order they are tried. Explicit
+# `liftover.chain` paths must exist; "auto" takes every candidate of the build
+# pair found in the chain dirs. Errors (with what to do next) when nothing is
+# found.
+.gcanvas_resolve_chains <- function(from, to, liftover.chain) {
   if (!.gcanvas_chain_is_auto(liftover.chain)) {
-    chain0 <- as.character(liftover.chain)[1]
-    if (!file.exists(chain0)) stop(sprintf("chain file not found: %s", chain0), call. = FALSE)
-    return(abs_path(chain0))
+    chains <- as.character(liftover.chain)
+    miss <- chains[!file.exists(chains)]
+    if (length(miss)) stop(sprintf("chain file not found: %s", miss[1]), call. = FALSE)
+    return(abs_path(chains))
   }
   from_key <- .gcanvas_build_key(from)
   to_key <- .gcanvas_build_key(to)
@@ -75,12 +80,11 @@
   if (!length(names)) {
     stop(sprintf("no chain file is known for %s -> %s; pass `liftover.chain`.", from_key, to_key), call. = FALSE)
   }
-  for (d in .gcanvas_chain_dirs()) {
-    for (nm in names) {
-      p <- file.path(d, nm)
-      if (file.exists(p)) return(abs_path(p))
-    }
-  }
+  found <- vapply(names, function(nm) {
+    p <- file.path(.gcanvas_chain_dirs(), nm)
+    p[file.exists(p)][1]
+  }, character(1), USE.NAMES = FALSE)
+  if (!all(is.na(found))) return(abs_path(found[!is.na(found)]))
   hint <- if (!is.null(.gcanvas_ucsc_chains[[paste(from_key, to_key, sep = "=>")]])) {
     sprintf(" Download it once with chain.download(from = %s, to = %s) (UCSC chain: non-commercial use only),",
             as.character(from)[1], as.character(to)[1])
@@ -315,9 +319,22 @@
   data.table::data.table(pos = pos, strand = strand, status = status)
 }
 
+# Rows a later chain may still lift: nothing was placed on their own chromosome.
+.gcanvas_lift_open <- c("unmapped", "other_chrom", "contig")
+
+# Open rows take a lift from the next chain; an "unmapped" row without one takes
+# what that chain did find. Lifted rows keep the position of the earlier chain.
+.gcanvas_lift_merge <- function(res, part) {
+  use <- (res$status %in% .gcanvas_lift_open & part$status == "ok") |
+    (res$status == "unmapped" & part$status != "unmapped")
+  data.table::set(res, i = which(use), j = names(res), value = part[use])
+  res
+}
+
 # Lift 1-based positions `pos` on chromosomes `chrom` from `from` to `to`.
-# Returns list(result = one row per input with pos/strand/status, chain,
-# method). Errors when the liftover cannot run at all (no chain, no binary).
+# Returns list(result = one row per input with pos/strand/status, chain = the
+# chains tried, lifted = rows each one lifted, method). Errors when the liftover
+# cannot run at all (no chain, no binary).
 .gcanvas_lift_core <- function(chrom, pos, from, to, method = "chain", liftover = NULL,
                                liftover.chain = "auto", rm.tmp = TRUE) {
   chr <- .gcanvas_lift_chr(chrom)
@@ -334,10 +351,11 @@
       strand = data.table::fifelse(bad, NA_character_, "+"),
       status = data.table::fifelse(bad, "bad_input", "ok")
     )
-    return(list(result = res, chain = NA_character_, method = "identity"))
+    return(list(result = res, chain = NA_character_, lifted = NA_integer_, method = "identity"))
   }
 
-  chain <- .gcanvas_resolve_chain(from, to, liftover.chain)
+  chains <- .gcanvas_resolve_chains(from, to, liftover.chain)
+  hits_of <- function(x, chain) .gcanvas_lift_hits_chain(x, p0, .gcanvas_chain_blocks(chain))
   if (identical(method, "binary")) {
     bin <- .gcanvas_resolve_liftover_bin(liftover)
     if (is.na(bin) && !is.null(attr(bin, "configured"))) {
@@ -347,11 +365,18 @@
       stop("method = \"binary\" needs the UCSC liftOver binary: pass `liftover`, set options(gcanvas.liftover) or ",
            "GCANVAS_LIFTOVER, or put liftOver on PATH.", call. = FALSE)
     }
-    hits <- .gcanvas_lift_hits_binary(chr, p0, chain, bin, rm.tmp = rm.tmp)
-  } else {
-    hits <- .gcanvas_lift_hits_chain(chr, p0, .gcanvas_chain_blocks(chain))
+    hits_of <- function(x, chain) .gcanvas_lift_hits_binary(x, p0, chain, bin, rm.tmp = rm.tmp)
   }
-  list(result = .gcanvas_lift_resolve(hits, chr, bad), chain = chain, method = method)
+  res <- NULL
+  lifted <- integer(length(chains))
+  for (i in seq_along(chains)) {
+    x <- chr
+    if (i > 1L) x[!(res$status %in% .gcanvas_lift_open)] <- NA_character_
+    part <- .gcanvas_lift_resolve(hits_of(x, chains[i]), chr, bad)
+    lifted[i] <- sum(part$status == "ok")
+    res <- if (i == 1L) part else .gcanvas_lift_merge(res, part)
+  }
+  list(result = res, chain = chains, lifted = lifted, method = method)
 }
 
 .gcanvas_lift_status_levels <- c("ok", "unmapped", "other_chrom", "contig", "multiple", "bad_input", "failed")
@@ -370,11 +395,19 @@
   paste(sprintf("%s=%s", names(tab), format(as.integer(tab), big.mark = ",", trim = TRUE)), collapse = " | ")
 }
 
+# Method and chains for the summary note, with the rows each chain lifted.
+.gcanvas_lift_how <- function(run) {
+  if (all(is.na(run$chain))) return(run$method)
+  used <- basename(run$chain)
+  if (length(used) > 1L) used <- sprintf("%s=%s", used, format(run$lifted, big.mark = ",", trim = TRUE))
+  sprintf("%s, %s", run$method, paste(used, collapse = " + "))
+}
+
 #' Lift variant coordinates between genome builds
 #'
 #' Translates each row's chromosome and position from build `from` to build
 #' `to`, and attaches the new position only when it can be trusted. By default
-#' the chain file is read directly in R, so no external program is needed and
+#' the chain files are read directly in R, so no external program is needed and
 #' it works on every OS; `method = "binary"` runs the UCSC `liftOver`
 #' executable with `-multiple` instead and applies the same rules to its hits.
 #' `from`/`to` accept `38`/`hg38`/`GRCh38`, `37`/`19`/`hg19`/`GRCh37`, and
@@ -401,8 +434,8 @@
 #' `lift_status` is one of
 #' \describe{
 #'   \item{`ok`}{lifted to a single position on the same chromosome.}
-#'   \item{`unmapped`}{no aligned block covers the base (deleted in the new
-#'     build, or the chromosome is not in the chain).}
+#'   \item{`unmapped`}{no aligned block covers the base in any chain (deleted
+#'     in the new build, or the chromosome is not in the chain).}
 #'   \item{`other_chrom`}{hits only on other standard chromosomes.}
 #'   \item{`contig`}{hits only on patch, alt or unplaced contigs.}
 #'   \item{`multiple`}{two or more distinct positions on the same chromosome.}
@@ -413,14 +446,23 @@
 #' }
 #'
 #' @section Chain files:
-#' With `liftover.chain = "auto"` the chain is chosen by build pair. GRCh37
-#' <-> GRCh38 use the Ensembl assembly-mapping chains bundled with gcanvas
-#' (Ensembl places no restrictions on the use of its data). hg18 -> hg19 uses
-#' the UCSC chain, which is not bundled because UCSC allows its liftOver chain
-#' files for non-commercial use only; fetch it once with [chain.download()].
-#' Any other chain file can be given as a path. A chain is parsed once per
-#' session and cached. When `from` and `to` are the same build, positions are
-#' returned unchanged (status `ok`).
+#' With `liftover.chain = "auto"` the chains are chosen by build pair and tried
+#' in order, each only on rows the earlier ones left without a position on the
+#' input's chromosome (`unmapped`, `other_chrom`, `contig`). A lifted row keeps
+#' the first chain's position, and a `multiple` row stays `NA`.
+#'
+#' GRCh37 <-> GRCh38 use two bundled chains, both free of use restrictions: one
+#' built from the NCBI Remap first-pass alignments, then the Ensembl
+#' assembly-mapping chain. The Ensembl chain alone has no blocks for several
+#' regions (e.g. GRCh37 chr17:34-37 Mb, chr10:47.5-48.7 Mb) and is what lifts
+#' MT, which the NCBI alignments leave out; MT is kept in rCRS coordinates.
+#'
+#' hg18 -> hg19 uses the UCSC chain, which is not bundled because UCSC allows
+#' its liftOver chain files for non-commercial use only; fetch it once with
+#' [chain.download()]. Any chain file can be given as a path instead, and UCSC
+#' chains read fine that way, but mind that UCSC hg19 `chrM` is not GRCh37 `MT`
+#' (rCRS). A chain is parsed once per session and cached. When `from` and `to`
+#' are the same build, positions are returned unchanged (status `ok`).
 #'
 #' @section liftOver binary:
 #' Only `method = "binary"` uses the UCSC `liftOver` executable; it gives the
@@ -437,13 +479,13 @@
 #' @param from,to Source and destination genome builds (see Description).
 #' @param liftover Path to the `liftOver` executable (or a command name on
 #'   `PATH`) for `method = "binary"`; ignored otherwise.
-#' @param liftover.chain Explicit chain file path, or `"auto"` (the default;
-#'   `NULL` is treated the same) to choose one by build pair.
+#' @param liftover.chain Chain file path(s), tried in order, or `"auto"` (the
+#'   default; `NULL` is treated the same) to choose by build pair.
 #' @param snp.col Ignored; kept for backward compatibility. Results are
 #'   attached by row, so no SNP id column is needed.
 #' @param chrom.col,pos.col Column names in `df` for the chromosome and the
 #'   1-based position.
-#' @param method `"auto"` (the default) and `"chain"` read the chain file in R;
+#' @param method `"auto"` (the default) and `"chain"` read the chain files in R;
 #'   `"binary"` runs UCSC `liftOver -multiple`.
 #' @param strict Logical. When the liftover cannot run at all, raise an error
 #'   instead of a warning. Per-row failures never raise; they are reported in
@@ -516,7 +558,7 @@ liftover <- function(df, from = 37, to = 38,
     n <- nrow(dt)
     run <- list(
       result = data.table::data.table(pos = rep(NA_integer_, n), strand = rep(NA_character_, n), status = rep("failed", n)),
-      chain = NA_character_, method = method
+      chain = NA_character_, lifted = NA_integer_, method = method
     )
   }
   res <- run$result
@@ -530,10 +572,14 @@ liftover <- function(df, from = 37, to = 38,
   data.table::set(dt, j = "lift_status", value = res$status)
 
   if (!isTRUE(silent)) {
-    how <- if (is.na(run$chain)) run$method else sprintf("%s, %s", run$method, basename(run$chain))
     .gcanvas_note("gcanvas::liftover", sprintf("%s -> %s (%s): n=%s | %s",
-                                               .gcanvas_build_label(from), .gcanvas_build_label(to), how,
+                                               .gcanvas_build_label(from), .gcanvas_build_label(to), .gcanvas_lift_how(run),
                                                format(nrow(dt), big.mark = ","), .gcanvas_lift_summary(res$status)))
+    n_unmapped <- sum(res$status == "unmapped")
+    if (n_unmapped > 0L && .gcanvas_chain_is_auto(liftover.chain)) {
+      .gcanvas_note("gcanvas::liftover", sprintf("%s row(s) have no aligned block in the bundled chains; pass `liftover.chain` to try another chain file.",
+                                                 format(n_unmapped, big.mark = ",")))
+    }
   }
   finalize(dt)
 }

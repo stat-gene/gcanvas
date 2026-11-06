@@ -22,8 +22,8 @@ SystemRequirements: Some functions shell out to external command-line tools
     plink.extract(), hetmiss(); PLINK 1.9
     (https://www.cog-genomics.org/plink/1.9/) is additionally required for the
     multi-input merge step of plink.extract(). liftover() reads chain files
-    itself (the Ensembl GRCh37/GRCh38 chains are bundled); the UCSC liftOver
-    binary (free for non-commercial use only) is needed only for
+    itself (GRCh37/GRCh38 chains from NCBI and Ensembl are bundled); the UCSC
+    liftOver binary (free for non-commercial use only) is needed only for
     liftover(method = "binary"). tabix/htslib
     (http://www.htslib.org/) for the GTF paths of gtf2rds(), regional(), and
     geneinfo().

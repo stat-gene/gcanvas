@@ -62,9 +62,8 @@ path via the function's `plink` argument):
 
 ### Liftover
 
-`liftover()` reads the chain file directly in R: no `liftOver` binary, no
-WSL. The Ensembl GRCh37 ⟷ GRCh38 chains ship with the package and are picked
-by build pair:
+`liftover()` reads chain files directly in R: no `liftOver` binary, no WSL.
+The GRCh37 ⟷ GRCh38 chains ship with the package and are picked by build pair:
 
 ```r
 lifted <- liftover(sumstats, from = 37, to = 38)   # adds POS_b38, CHR_b38, STRAND_b38, lift_status
@@ -88,6 +87,16 @@ It attaches only positions it can trust:
 `STRAND_b38 == "-"` means the base is reverse-complemented in the new build,
 so alleles must be complemented. `regional(..., build.gwas = 37, build = 38)`
 uses the same rules and draws only `ok` variants.
+
+GRCh37 ⟷ GRCh38 use two bundled chains, both free of use restrictions, tried in
+order: one built from the NCBI Remap first-pass alignments, then the Ensembl
+assembly-mapping chain for rows the first left without a position on their
+chromosome. The Ensembl chain alone has no blocks for several regions (e.g.
+GRCh37 chr17:34-37 Mb, which holds *HNF1B*, and chr10:47.5-48.7 Mb): on the
+1.12M-SNP 1000 Genomes HapMap3 panel it leaves 1,431 SNPs unlifted, against 18
+for the two chains. The summary note shows the rows each chain lifted and points
+out rows still `unmapped`. To use one chain only, or a chain of your own, pass
+`liftover.chain` (paths are tried in order).
 
 hg18 → hg19 uses a UCSC chain. UCSC chain files are free for non-commercial use
 only, so it is not bundled; download it once (you are asked to accept the UCSC

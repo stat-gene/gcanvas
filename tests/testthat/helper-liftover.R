@@ -9,11 +9,12 @@
 #   8: t[0,100) -> GL000192.1:q[0,100)                (contig only)
 #   X: t[0,100) -> X:q[1000,1100);  MT: t[0,100) -> MT:q[0,100)
 #   HG1_PATCH: t[0,100) -> 9:q[0,100)                 (non-standard target)
+hdr <- function(tn, ts, te, qn, qs, qstr, q0, q1, id) {
+  sprintf("chain 1 %s 1000 + %d %d %s %d %s %d %d %d", tn, ts, te, qn, qs, qstr, q0, q1, id)
+}
+
 toy_chain <- function() {
   path <- tempfile(fileext = ".chain")
-  hdr <- function(tn, ts, te, qn, qs, qstr, q0, q1, id) {
-    sprintf("chain 1 %s 1000 + %d %d %s %d %s %d %d %d", tn, ts, te, qn, qs, qstr, q0, q1, id)
-  }
   writeLines(c(
     hdr("1", 100, 300, "1", 1000, "+", 200, 400, 1), "100 50 50", "50", "",
     hdr("2", 0, 100, "2", 1000, "-", 0, 100, 2), "100", "",
@@ -28,6 +29,24 @@ toy_chain <- function() {
     hdr("X", 0, 100, "X", 2000, "+", 1000, 1100, 10), "100", "",
     hdr("MT", 0, 100, "MT", 1000, "+", 0, 100, 11), "100", "",
     hdr("HG1_PATCH", 0, 100, "9", 1000, "+", 0, 100, 12), "100", ""
+  ), path)
+  path
+}
+
+# Second chain for toy_chain(): each block is t[0,100).
+#   1 -> 1:q[500,600) (toy_chain() has 1:t[100,200), so pos 150 keeps its lift)
+#   2 -> 2:q[10,110); 3 -> 3:q[20,120); 8 -> 8:q[30,130)    (rows it can lift)
+#   5 -> 5:q[40,140)          (toy_chain() has two positions: the row stays NA)
+#   9 -> GL000192.1:q[0,100)  (an "unmapped" row becomes "contig")
+toy_chain_next <- function() {
+  path <- tempfile(fileext = ".chain")
+  writeLines(c(
+    hdr("1", 100, 200, "1", 1000, "+", 500, 600, 1), "100", "",
+    hdr("2", 100, 200, "2", 1000, "+", 10, 110, 2), "100", "",
+    hdr("3", 0, 100, "3", 1000, "+", 20, 120, 3), "100", "",
+    hdr("8", 0, 100, "8", 1000, "+", 30, 130, 4), "100", "",
+    hdr("5", 0, 100, "5", 1000, "+", 40, 140, 5), "100", "",
+    hdr("9", 0, 100, "GL000192.1", 1000, "+", 0, 100, 6), "100", ""
   ), path)
   path
 }
@@ -51,6 +70,11 @@ lift_toy <- function(chr, pos, ...) {
 
 lift_bundled <- function(chr, pos, from = 38, to = 37, ...) {
   liftover(data.frame(CHR = chr, POS = pos, stringsAsFactors = FALSE), from = from, to = to, silent = TRUE, ...)
+}
+
+# The bundled Ensembl chain on its own (`auto` tries the NCBI chain first).
+ensembl_chain <- function(from = 38, to = 37) {
+  system.file("extdata", sprintf("GRCh%d_to_GRCh%d.chain.gz", from, to), package = "gcanvas")
 }
 
 liftover_bin <- function() {
