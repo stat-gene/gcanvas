@@ -2,6 +2,7 @@
 
 export("sort.chrom")
 export("split.plot_label")
+export(allele.sort)
 export(beta.align)
 export(cache.list)
 export(cache.reset)

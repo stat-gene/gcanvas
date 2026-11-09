@@ -85,6 +85,62 @@ marker.id <- function(chrom, pos, a1, a2, strand = NULL, normalize = FALSE, sep 
   out
 }
 
+#' Sort the two alleles of each row
+#'
+#' Returns the two alleles of each row in upper case and in byte (C-locale)
+#' order, the same order [marker.id()] writes them in. With these two columns
+#' and the chromosome and position, two tables can be joined on the variant
+#' whichever allele each lists first, without building ID strings: on ten
+#' million rows such a join is several times faster and uses a fraction of the
+#' memory of a join on [marker.id()] strings.
+#'
+#' A row with a missing allele gets `NA` in both columns. data.table joins match
+#' `NA` keys with each other, so drop those rows before joining. Logical alleles
+#' are an error (`read.table()` reads a column of `T` alleles as `TRUE`).
+#'
+#' @inheritParams marker.id
+#' @return A list of two character vectors, `lo` and `hi`, one element per row.
+#'   Arguments of length 1 are recycled.
+#' @examples
+#' allele.sort(c("G", "a", "T"), c("A", "G", "C"))
+#' # join two tables on position and alleles, whichever allele is listed first
+#' x <- data.table::data.table(CHR = 1, POS = c(100L, 200L), A1 = c("A", "C"), A2 = c("G", "T"))
+#' y <- data.table::data.table(CHR = 1, POS = c(100L, 200L), A1 = c("G", "C"), A2 = c("A", "G"))
+#' x[, c("A_lo", "A_hi") := allele.sort(A1, A2)]
+#' y[, c("A_lo", "A_hi") := allele.sort(A1, A2)]
+#' y[x, on = c("CHR", "POS", "A_lo", "A_hi"), nomatch = NULL]
+#' @export
+allele.sort <- function(a1, a2, strand = NULL) {
+  args <- list(a1 = a1, a2 = a2)
+  if (!is.null(strand)) args$strand <- strand
+  len <- lengths(args)
+  n <- max(len)
+  if (any(!(len %in% c(1L, n)))) {
+    stop(sprintf("%s must have the same length (or length 1).", paste(names(args), collapse = ", ")), call. = FALSE)
+  }
+  x1 <- rep_len(.gcanvas_marker_allele(a1, "a1"), n)
+  x2 <- rep_len(.gcanvas_marker_allele(a2, "a2"), n)
+  if (!is.null(strand)) {
+    s <- rep_len(as.character(strand), n)
+    if (!all(s %in% c("+", "-", NA))) stop("strand must be \"+\", \"-\" or NA.", call. = FALSE)
+    flip <- which(s == "-")
+    x1[flip] <- .gcanvas_revcomp(x1[flip])
+    x2[flip] <- .gcanvas_revcomp(x2[flip])
+  }
+  miss <- is.na(x1) | is.na(x2)
+  x1[miss] <- NA_character_
+  x2[miss] <- NA_character_
+  u <- unique(c(x1, x2))
+  r <- integer(length(u))
+  r[order(u, method = "radix")] <- seq_along(u)
+  swap <- which(r[data.table::chmatch(x2, u)] < r[data.table::chmatch(x1, u)])
+  lo <- x1
+  lo[swap] <- x2[swap]
+  hi <- x2
+  hi[swap] <- x1[swap]
+  list(lo = lo, hi = hi)
+}
+
 # f(x) evaluated once per distinct value of a character vector.
 .gcanvas_on_unique <- function(x, f) {
   u <- unique(x)

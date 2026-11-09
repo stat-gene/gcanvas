@@ -168,6 +168,7 @@ environment variable, or put it on `PATH`. See
 |---|---|
 | `liftover()` | Coordinate liftover between builds from chain files (same-chromosome hits only, per-row `lift_status`) |
 | `marker.id()` | Marker ID `chrom:pos:a:b` with upper-cased, sorted alleles; the same ID for integer, numeric or character positions |
+| `allele.sort()` | The two alleles of each row in `marker.id()` order, for joining tables on `CHR`, `POS` and alleles without ID strings |
 | `chain.download()` | Fetch the UCSC hg18 → hg19 chain (non-commercial terms) for `liftover()` |
 | `is.novel()` | Mark hits as novel vs. a reported set (with distance threshold) |
 | `get.lead()` | Greedy lead-variant detection over summary stats |

@@ -51,3 +51,34 @@ test_that("IDs after liftover() use the lifted position and strand", {
   expect_identical(marker.id(out$CHR, out$POS_b38, out$A1, out$A2, strand = out$STRAND_b38),
                    c("17:37738049:A:G", "15:23117883:G:T"))
 })
+
+test_that("allele.sort() gives the alleles in marker.id() order", {
+  out <- allele.sort(c("G", "a", "T", "<DEL>", NA, "A"), c("A", "G", "C", "*", "C", NA))
+  expect_identical(out, list(lo = c("A", "A", "C", "*", NA, NA), hi = c("G", "G", "T", "<DEL>", NA, NA)))
+  expect_identical(allele.sort("A", c("G", "C"), strand = c("-", "+")), list(lo = c("C", "A"), hi = c("T", "C")))
+  expect_identical(allele.sort(factor("T"), factor("C")), list(lo = "C", hi = "T"))
+  expect_identical(allele.sort(character(), character()), list(lo = character(), hi = character()))
+  expect_error(allele.sort(TRUE, "C"), "logical")
+  expect_error(allele.sort(c("A", "C"), c("G", "T", "A")), "same length")
+
+  set.seed(1)
+  al <- c("A", "C", "G", "T", "a", "AT", "-")
+  d <- data.frame(CHR = sample(1:3, 2000, TRUE), POS = sample.int(1e6, 2000), A1 = sample(al, 2000, TRUE),
+                  A2 = sample(al, 2000, TRUE), S = sample(c("+", "-", NA), 2000, TRUE))
+  k <- allele.sort(d$A1, d$A2, strand = d$S)
+  expect_identical(paste(d$CHR, d$POS, k$lo, k$hi, sep = ":"), marker.id(d$CHR, d$POS, d$A1, d$A2, strand = d$S))
+})
+
+test_that("allele.sort() columns join two tables like marker.id() strings do", {
+  set.seed(2)
+  al <- c("A", "C", "G", "T")
+  x <- data.table::data.table(CHR = sample(1:2, 500, TRUE), POS = sample.int(1e4, 500), A1 = sample(al, 500, TRUE))
+  x[, A2 := al[(match(A1, al) + sample(0:2, .N, TRUE)) %% 4 + 1]]
+  y <- data.table::copy(x)[sample(.N, 300)][, c("A1", "A2") := .(A2, A1)]
+  x[, c("A_lo", "A_hi") := allele.sort(A1, A2)]
+  y[, c("A_lo", "A_hi") := allele.sort(A1, A2)]
+  by_cols <- y[x, on = c("CHR", "POS", "A_lo", "A_hi"), nomatch = NULL]
+  by_id <- intersect(marker.id(x$CHR, x$POS, x$A1, x$A2), marker.id(y$CHR, y$POS, y$A1, y$A2))
+  expect_identical(nrow(by_cols), 300L)
+  expect_setequal(marker.id(by_cols$CHR, by_cols$POS, by_cols$A_lo, by_cols$A_hi), by_id)
+})
