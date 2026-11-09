@@ -13,7 +13,7 @@ test_that("integer, numeric and character positions give the same ID", {
 
 test_that("allele order and case do not matter, and the order is byte-wise", {
   expect_identical(marker.id(1, 5, c("G", "a", "A", "g"), c("A", "G", "g", "A")), rep("1:5:A:G", 4))
-  expect_identical(marker.id(1, 5, c("<DEL>", "-", "AT", "I"), c("*", "A", "A", "D")),
+  expect_identical(suppressWarnings(marker.id(1, 5, c("<DEL>", "-", "AT", "I"), c("*", "A", "A", "D"))),
                    c("1:5:*:<DEL>", "1:5:-:A", "1:5:A:AT", "1:5:D:I"))
   expect_identical(marker.id(1, 5, factor("T"), factor("C")), "1:5:C:T")
 })
@@ -22,6 +22,10 @@ test_that("missing parts give NA, bad input is an error", {
   expect_identical(marker.id(c(1, NA, 1, 1, 1), c(5, 5, NA, 5, 5), c("A", "A", "A", NA, "A"), c("G", "G", "G", "G", NA)),
                    c("1:5:A:G", NA, NA, NA, NA))
   expect_identical(marker.id(1, c("", ".", "NA"), "A", "G"), rep(NA_character_, 3))
+  # missing-value strings in chromosome and alleles, after trimming spaces
+  expect_identical(suppressWarnings(marker.id(c("", " . ", "NA", "1", "1", "1", " 1 "), 5, c("A", "A", "A", "NA", "", " ", " a"), "G")),
+                   c(NA, NA, NA, NA, NA, NA, "1:5:A:G"))
+  expect_identical(suppressWarnings(marker.id(1, 5, c("na", "-", "*", "0"), "G")), c(NA, "1:5:-:G", "1:5:*:G", NA))
   expect_identical(marker.id(character(), integer(), character(), character()), character())
   expect_error(marker.id(1, 1234.5, "A", "G"), "whole numbers")
   expect_error(marker.id(1, -1L, "A", "G"), "whole numbers")
@@ -31,8 +35,31 @@ test_that("missing parts give NA, bad input is an error", {
   expect_error(marker.id(1:2, 1:3, "A", "G"), "same length")
 })
 
+test_that("unusual alleles give one warning per kind, with examples from the data", {
+  w <- testthat::capture_warnings(id <- marker.id(
+    c(1, 1, 1, 2, 2, 3, 3, 3, 3, 4),
+    c(100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
+    c("0", "-", "*", "1", "I", "<DEL>", "AN", "R", "A", "0"),
+    c("G", "T", "A", "2", "D", "A", "C", "G", ".", "T")
+  ))
+  expect_identical(id, c(NA, "1:200:-:T", "1:300:*:A", "2:400:1:2", "2:500:D:I", "3:600:<DEL>:A", "3:700:AN:C", "3:800:G:R", NA, NA))
+  expect_length(w, 8L)
+  expect_match(w[1], "^missing allele code .*set to NA: 3 row\\(s\\), e\\.g\\. 1:100 0/G, 3:900 A/\\., 4:1000 0/T$")
+  expect_match(w[2], "^allele \"-\" .*: 1 row\\(s\\), e\\.g\\. 1:200 -/T$")
+  expect_match(w[3], "spanning deletion.*1:300 \\*/A$")
+  expect_match(w[4], "numeric allele code.*2:400 1/2$")
+  expect_match(w[5], "I/D.*2:500 I/D$")
+  expect_match(w[6], "symbolic.*3:600 <DEL>/A$")
+  expect_match(w[7], "unknown base.*3:700 AN/C$")
+  expect_match(w[8], "not made of A/C/G/T.*3:800 R/G$")
+  # at most three examples, and allele.sort() names rows by number
+  expect_match(testthat::capture_warnings(marker.id(1, 1:5, "-", "A")), "5 row\\(s\\), e\\.g\\. 1:1 -/A, 1:2 -/A, 1:3 -/A$")
+  expect_warning(allele.sort(c("A", "0"), c("G", "")), "1 row\\(s\\), e\\.g\\. row 2 0/\"\"$")
+  expect_no_warning(marker.id(1, 1:3, c("A", "AT", "c"), c("G", "A", "T")))
+})
+
 test_that("strand, chromosome normalization and separator", {
-  expect_identical(marker.id(1, 100, c("A", "AT", "-", "A"), c("G", "A", "C", "T"), strand = "-"),
+  expect_identical(suppressWarnings(marker.id(1, 100, c("A", "AT", "-", "A"), c("G", "A", "C", "T"), strand = "-")),
                    c("1:100:C:T", "1:100:AT:T", "1:100:-:G", "1:100:A:T"))
   expect_identical(marker.id(1, 100, "A", "G", strand = c(NA)), "1:100:A:G")
   expect_error(marker.id(1, 100, "A", "G", strand = "x"), "strand")
@@ -53,10 +80,12 @@ test_that("IDs after liftover() use the lifted position and strand", {
 })
 
 test_that("allele.sort() gives the alleles in marker.id() order", {
-  out <- allele.sort(c("G", "a", "T", "<DEL>", NA, "A"), c("A", "G", "C", "*", "C", NA))
+  out <- suppressWarnings(allele.sort(c("G", "a", "T", "<DEL>", NA, "A"), c("A", "G", "C", "*", "C", NA)))
   expect_identical(out, list(lo = c("A", "A", "C", "*", NA, NA), hi = c("G", "G", "T", "<DEL>", NA, NA)))
   expect_identical(allele.sort("A", c("G", "C"), strand = c("-", "+")), list(lo = c("C", "A"), hi = c("T", "C")))
   expect_identical(allele.sort(factor("T"), factor("C")), list(lo = "C", hi = "T"))
+  expect_identical(suppressWarnings(allele.sort(c("", ".", " A", "NA", "0"), c("G", "G", "g ", "C", "T"))),
+                   list(lo = c(NA, NA, "A", NA, NA), hi = c(NA, NA, "G", NA, NA)))
   expect_identical(allele.sort(character(), character()), list(lo = character(), hi = character()))
   expect_error(allele.sort(TRUE, "C"), "logical")
   expect_error(allele.sort(c("A", "C"), c("G", "T", "A")), "same length")
@@ -65,8 +94,8 @@ test_that("allele.sort() gives the alleles in marker.id() order", {
   al <- c("A", "C", "G", "T", "a", "AT", "-")
   d <- data.frame(CHR = sample(1:3, 2000, TRUE), POS = sample.int(1e6, 2000), A1 = sample(al, 2000, TRUE),
                   A2 = sample(al, 2000, TRUE), S = sample(c("+", "-", NA), 2000, TRUE))
-  k <- allele.sort(d$A1, d$A2, strand = d$S)
-  expect_identical(paste(d$CHR, d$POS, k$lo, k$hi, sep = ":"), marker.id(d$CHR, d$POS, d$A1, d$A2, strand = d$S))
+  k <- suppressWarnings(allele.sort(d$A1, d$A2, strand = d$S))
+  expect_identical(paste(d$CHR, d$POS, k$lo, k$hi, sep = ":"), suppressWarnings(marker.id(d$CHR, d$POS, d$A1, d$A2, strand = d$S)))
 })
 
 test_that("allele.sort() columns join two tables like marker.id() strings do", {

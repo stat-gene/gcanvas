@@ -35,10 +35,23 @@ allele is listed first and whatever the session locale.
 Positions may be integer, numeric or character and give the same ID: whole
 numbers are written in fixed notation (\code{100000}, never \code{1e+05}), and a
 character position is read as a number (\code{"1e+05"}, \code{" 100000"} and
-\code{"100000"} all give \code{100000}; \code{""}, \code{"."} and \code{"NA"} are missing). A
-non-whole or negative position is an error, as are logical alleles
-(\code{read.table()} reads a column of \code{T} alleles as \code{TRUE}). A missing
-chromosome, position or allele gives \code{NA}.
+\code{"100000"} all give \code{100000}). A non-whole or negative position is an error,
+as are logical alleles (\code{read.table()} reads a column of \code{T} alleles as
+\code{TRUE}).
+
+A row gets \code{NA} when its chromosome, position or either allele is missing:
+\code{NA}, or a string that is \code{""}, \code{"."} or \code{"NA"} once leading and trailing
+spaces are removed (spaces are removed from every chromosome and allele), or
+an allele \code{"0"} (PLINK's missing allele).
+
+Unusual alleles are reported with one warning per kind, giving the number of
+rows and up to three of them as examples: the missing codes above (\code{0}, \code{.},
+\code{""}, \code{NA}; the row gets \code{NA}), \code{-} (the empty allele of an indel, as in
+ANNOVAR), \code{*} (VCF spanning deletion), numeric codes (PLINK \code{1/2} or \code{1234}
+coding), \code{I}/\code{D}, symbolic alleles such as \verb{<DEL>}, \code{N}, and anything else
+that is not \code{A/C/G/T}. Only the missing codes change the result; the other
+alleles are kept but do not match the same variant written in \code{A/C/G/T} or as
+a VCF-style indel (e.g. \code{AT/A}). Use \code{\link[=suppressWarnings]{suppressWarnings()}} to silence them.
 
 The ID is not strand-free: \code{A/G} and its complement \code{C/T} differ, and a
 palindromic SNP (\code{A/T}, \code{C/G}) keeps its ID on either strand although its

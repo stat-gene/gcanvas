@@ -10,10 +10,23 @@
 #' Positions may be integer, numeric or character and give the same ID: whole
 #' numbers are written in fixed notation (`100000`, never `1e+05`), and a
 #' character position is read as a number (`"1e+05"`, `" 100000"` and
-#' `"100000"` all give `100000`; `""`, `"."` and `"NA"` are missing). A
-#' non-whole or negative position is an error, as are logical alleles
-#' (`read.table()` reads a column of `T` alleles as `TRUE`). A missing
-#' chromosome, position or allele gives `NA`.
+#' `"100000"` all give `100000`). A non-whole or negative position is an error,
+#' as are logical alleles (`read.table()` reads a column of `T` alleles as
+#' `TRUE`).
+#'
+#' A row gets `NA` when its chromosome, position or either allele is missing:
+#' `NA`, or a string that is `""`, `"."` or `"NA"` once leading and trailing
+#' spaces are removed (spaces are removed from every chromosome and allele), or
+#' an allele `"0"` (PLINK's missing allele).
+#'
+#' Unusual alleles are reported with one warning per kind, giving the number of
+#' rows and up to three of them as examples: the missing codes above (`0`, `.`,
+#' `""`, `NA`; the row gets `NA`), `-` (the empty allele of an indel, as in
+#' ANNOVAR), `*` (VCF spanning deletion), numeric codes (PLINK `1/2` or `1234`
+#' coding), `I`/`D`, symbolic alleles such as `<DEL>`, `N`, and anything else
+#' that is not `A/C/G/T`. Only the missing codes change the result; the other
+#' alleles are kept but do not match the same variant written in `A/C/G/T` or as
+#' a VCF-style indel (e.g. `AT/A`). Use [suppressWarnings()] to silence them.
 #'
 #' The ID is not strand-free: `A/G` and its complement `C/T` differ, and a
 #' palindromic SNP (`A/T`, `C/G`) keeps its ID on either strand although its
@@ -58,6 +71,9 @@ marker.id <- function(chrom, pos, a1, a2, strand = NULL, normalize = FALSE, sep 
   p <- rep_len(p, n)
   x1 <- rep_len(x1, n)
   x2 <- rep_len(x2, n)
+  al <- .gcanvas_allele_check(x1, x2, function(i) sprintf(if (is.integer(p)) "%s:%d" else "%s:%.0f", chr[i], p[i]))
+  x1 <- al[[1]]
+  x2 <- al[[2]]
 
   if (!is.null(strand)) {
     s <- rep_len(as.character(strand), n)
@@ -94,9 +110,11 @@ marker.id <- function(chrom, pos, a1, a2, strand = NULL, normalize = FALSE, sep 
 #' million rows such a join is several times faster and uses a fraction of the
 #' memory of a join on [marker.id()] strings.
 #'
-#' A row with a missing allele gets `NA` in both columns. data.table joins match
-#' `NA` keys with each other, so drop those rows before joining. Logical alleles
-#' are an error (`read.table()` reads a column of `T` alleles as `TRUE`).
+#' A row with a missing allele (`NA`, or `""`, `"."`, `"NA"` or `"0"` as in
+#' [marker.id()]) gets `NA` in both columns. data.table joins match `NA` keys
+#' with each other, so drop those rows before joining. Unusual alleles are
+#' reported as in [marker.id()], and logical alleles are an error
+#' (`read.table()` reads a column of `T` alleles as `TRUE`).
 #'
 #' @inheritParams marker.id
 #' @return A list of two character vectors, `lo` and `hi`, one element per row.
@@ -118,8 +136,9 @@ allele.sort <- function(a1, a2, strand = NULL) {
   if (any(!(len %in% c(1L, n)))) {
     stop(sprintf("%s must have the same length (or length 1).", paste(names(args), collapse = ", ")), call. = FALSE)
   }
-  x1 <- rep_len(.gcanvas_marker_allele(a1, "a1"), n)
-  x2 <- rep_len(.gcanvas_marker_allele(a2, "a2"), n)
+  al <- .gcanvas_allele_check(rep_len(.gcanvas_marker_allele(a1, "a1"), n), rep_len(.gcanvas_marker_allele(a2, "a2"), n))
+  x1 <- al[[1]]
+  x2 <- al[[2]]
   if (!is.null(strand)) {
     s <- rep_len(as.character(strand), n)
     if (!all(s %in% c("+", "-", NA))) stop("strand must be \"+\", \"-\" or NA.", call. = FALSE)
@@ -141,6 +160,68 @@ allele.sort <- function(a1, a2, strand = NULL) {
   list(lo = lo, hi = hi)
 }
 
+# Strings that count as missing in chromosome, position and allele columns;
+# alleles also have PLINK's "0".
+.gcanvas_marker_na <- c("", ".", "NA")
+.gcanvas_allele_na <- c(.gcanvas_marker_na, "0")
+
+# Kinds of unusual allele reported by .gcanvas_allele_check(), in that order.
+.gcanvas_allele_kinds <- c(
+  missing = "missing allele code (0, ., \"\", NA), set to NA",
+  dash = "allele \"-\" (empty allele of an indel), kept; VCF-style indels such as AT/A do not match it",
+  star = "allele \"*\" (VCF spanning deletion), kept",
+  number = "numeric allele code (PLINK 1/2 or 1234 coding?), kept; it does not match A/C/G/T",
+  indel = "allele I/D, kept; VCF-style indels do not match it",
+  symbolic = "symbolic allele (e.g. <DEL>), kept",
+  n = "allele with N (unknown base), kept",
+  other = "allele not made of A/C/G/T, kept"
+)
+
+# Kind of each (upper-cased, trimmed) allele; NA for A/C/G/T and missing values.
+.gcanvas_allele_kind <- function(u) {
+  k <- rep(NA_character_, length(u))
+  set <- function(hit, kind) k[is.na(k) & !is.na(u) & hit] <<- kind
+  set(u %in% .gcanvas_allele_na, "missing")
+  set(u == "-", "dash")
+  set(u == "*", "star")
+  set(grepl("^[0-9]+$", u), "number")
+  set(u %in% c("I", "D"), "indel")
+  set(grepl("^<.*>$", u), "symbolic")
+  set(grepl("^[ACGTN]+$", u), "n")
+  set(!grepl("^[ACGT]+$", u), "other")
+  k[k %in% "n" & !grepl("N", u, fixed = TRUE)] <- NA_character_
+  k
+}
+
+# Warns once per kind of unusual allele with up to three rows as examples
+# (`label(i)` names rows `i`, e.g. "1:100"), and returns the two alleles with
+# the missing codes set to NA.
+.gcanvas_allele_check <- function(x1, x2, label = function(i) paste("row", i)) {
+  u <- unique(c(x1, x2))
+  kind <- .gcanvas_allele_kind(u)
+  if (!all(is.na(kind))) {
+    k1 <- kind[data.table::chmatch(x1, u)]
+    k2 <- kind[data.table::chmatch(x2, u)]
+    show <- function(a) ifelse(is.na(a), "NA", ifelse(nzchar(a), a, "\"\""))
+    for (k in intersect(names(.gcanvas_allele_kinds), kind)) {
+      rows <- which(k1 %in% k | k2 %in% k)
+      ex <- rows[seq_len(min(3L, length(rows)))]
+      warning(sprintf("%s: %s row(s), e.g. %s", .gcanvas_allele_kinds[[k]], format(length(rows), big.mark = ","),
+                      paste(sprintf("%s %s/%s", label(ex), show(x1[ex]), show(x2[ex])), collapse = ", ")), call. = FALSE)
+    }
+    x1[k1 %in% "missing"] <- NA_character_
+    x2[k2 %in% "missing"] <- NA_character_
+  }
+  list(x1, x2)
+}
+
+# Spaces trimmed, missing-value strings set to NA.
+.gcanvas_marker_clean <- function(x) {
+  x <- trimws(x)
+  x[x %in% .gcanvas_marker_na] <- NA_character_
+  x
+}
+
 # f(x) evaluated once per distinct value of a character vector.
 .gcanvas_on_unique <- function(x, f) {
   u <- unique(x)
@@ -151,13 +232,13 @@ allele.sort <- function(a1, a2, strand = NULL) {
   if (is.logical(x) && !all(is.na(x))) {
     stop(sprintf("%s is logical (an allele T read as TRUE?); read alleles as character.", what), call. = FALSE)
   }
-  .gcanvas_on_unique(as.character(x), toupper)
+  .gcanvas_on_unique(as.character(x), function(u) trimws(toupper(u)))
 }
 
 # Chromosome names; whole numbers in fixed notation (`as.character(1)` is
 # "1e+00" under a negative `scipen`).
 .gcanvas_marker_chrom <- function(chrom) {
-  if (!is.numeric(chrom)) return(as.character(chrom))
+  if (!is.numeric(chrom)) return(.gcanvas_on_unique(as.character(chrom), .gcanvas_marker_clean))
   u <- unique(chrom)
   v <- as.character(u)
   whole <- !is.na(u) & u == floor(u) & abs(u) <= .Machine$integer.max
@@ -170,8 +251,7 @@ allele.sort <- function(a1, a2, strand = NULL) {
 .gcanvas_marker_pos <- function(pos) {
   if (is.factor(pos) || inherits(pos, "integer64")) pos <- as.character(pos)
   if (is.character(pos)) {
-    s <- trimws(pos)
-    s[s %in% c("", ".", "NA")] <- NA_character_
+    s <- .gcanvas_marker_clean(pos)
     pos <- suppressWarnings(as.numeric(s))
     bad <- !is.na(s) & is.na(pos)
     if (any(bad)) {

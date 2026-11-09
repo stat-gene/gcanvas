@@ -25,9 +25,11 @@ million rows such a join is several times faster and uses a fraction of the
 memory of a join on \code{\link[=marker.id]{marker.id()}} strings.
 }
 \details{
-A row with a missing allele gets \code{NA} in both columns. data.table joins match
-\code{NA} keys with each other, so drop those rows before joining. Logical alleles
-are an error (\code{read.table()} reads a column of \code{T} alleles as \code{TRUE}).
+A row with a missing allele (\code{NA}, or \code{""}, \code{"."}, \code{"NA"} or \code{"0"} as in
+\code{\link[=marker.id]{marker.id()}}) gets \code{NA} in both columns. data.table joins match \code{NA} keys
+with each other, so drop those rows before joining. Unusual alleles are
+reported as in \code{\link[=marker.id]{marker.id()}}, and logical alleles are an error
+(\code{read.table()} reads a column of \code{T} alleles as \code{TRUE}).
 }
 \examples{
 allele.sort(c("G", "a", "T"), c("A", "G", "C"))
